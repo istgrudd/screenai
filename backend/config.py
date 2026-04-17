@@ -31,11 +31,26 @@ class Settings(BaseSettings):
     # --- App ---
     app_port: int = 8000
     frontend_url: str = "http://localhost:5173"
+    environment: str = "development"
+    # Comma-separated list of allowed CORS origins. Falls back to frontend_url when empty.
+    allowed_origins: str = ""
 
     # --- Auth ---
     secret_key: str = "dev-secret-change-me-in-production-min-32-chars"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 480
+
+    @property
+    def cors_origins(self) -> list[str]:
+        """Return the list of origins allowed to call the API.
+
+        Production deployments set ALLOWED_ORIGINS to a comma-separated list
+        (e.g. "https://screenai.vercel.app,https://www.example.com"). Local
+        dev falls back to a single FRONTEND_URL.
+        """
+        if self.allowed_origins.strip():
+            return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
+        return [self.frontend_url]
 
     # --- Data directories ---
     raw_pdfs_dir: str = "./data/raw_pdfs"

@@ -5,17 +5,24 @@ from sqlalchemy.orm import sessionmaker, DeclarativeBase
 
 from backend.config import settings
 
-# For SQLite, check_same_thread=False is required for FastAPI's
-# async request handling across threads.
-connect_args = {}
-if settings.database_url.startswith("sqlite"):
-    connect_args["check_same_thread"] = False
+# Railway's DATABASE_URL historically uses the legacy "postgres://" scheme
+# which SQLAlchemy 2.x no longer recognizes. Normalize it here.
+_database_url = settings.database_url
+if _database_url.startswith("postgres://"):
+    _database_url = _database_url.replace("postgres://", "postgresql://", 1)
 
-engine = create_engine(
-    settings.database_url,
-    connect_args=connect_args,
-    echo=False,
-)
+_is_sqlite = _database_url.startswith("sqlite")
+
+connect_args: dict = {}
+engine_kwargs: dict = {"echo": False}
+if _is_sqlite:
+    # check_same_thread=False is required for FastAPI's threaded request handling.
+    connect_args["check_same_thread"] = False
+else:
+    # pool_pre_ping avoids stale-connection errors on managed Postgres (Railway, etc).
+    engine_kwargs["pool_pre_ping"] = True
+
+engine = create_engine(_database_url, connect_args=connect_args, **engine_kwargs)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
