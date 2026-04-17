@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+venv/
+.venv/
+
+# Environment variables
+.env
+
+# Data (local only — never commit)
+data/raw_pdfs/
+data/extracted/
+data/anonymized/
+data/app.db
+
+# Vector store persistence
+backend/vectorstore/
+
+# NER model cache
+models/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node / Frontend
+frontend/node_modules/
+frontend/dist/
