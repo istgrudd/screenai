@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     app_port: int = 8000
     frontend_url: str = "http://localhost:5173"
 
+    # --- Auth ---
+    secret_key: str = "dev-secret-change-me-in-production-min-32-chars"
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 480
+
     # --- Data directories ---
     raw_pdfs_dir: str = "./data/raw_pdfs"
     extracted_dir: str = "./data/extracted"

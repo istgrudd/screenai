@@ -55,6 +55,7 @@ _EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
     "candidates": {
         "language_score": "INTEGER",
         "language_bonus": "FLOAT",
+        "user_id": "INTEGER",
     },
 }
 

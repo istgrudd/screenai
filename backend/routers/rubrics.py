@@ -13,7 +13,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
+from backend.middleware.auth_middleware import require_role
 from backend.models.rubric import Rubric, Dimension
+from backend.models.user import UserRole
+
+_recruiter_or_admin = require_role(UserRole.RECRUITER, UserRole.SUPER_ADMIN)
 
 router = APIRouter(prefix="/api/rubrics", tags=["rubrics"])
 
@@ -91,7 +95,7 @@ def _validate_weights(dimensions: list) -> None:
 # Endpoints
 # ---------------------------------------------------------------------------
 
-@router.post("")
+@router.post("", dependencies=[Depends(_recruiter_or_admin)])
 def create_rubric(payload: RubricCreate, db: Session = Depends(get_db)):
     """Create a new rubric with its dimensions."""
     _validate_weights(payload.dimensions)
@@ -159,7 +163,7 @@ def get_rubric(rubric_id: int, db: Session = Depends(get_db)):
     }
 
 
-@router.put("/{rubric_id}")
+@router.put("/{rubric_id}", dependencies=[Depends(_recruiter_or_admin)])
 def update_rubric(
     rubric_id: int, payload: RubricUpdate, db: Session = Depends(get_db)
 ):
@@ -198,7 +202,7 @@ def update_rubric(
     }
 
 
-@router.delete("/{rubric_id}")
+@router.delete("/{rubric_id}", dependencies=[Depends(_recruiter_or_admin)])
 def delete_rubric(rubric_id: int, db: Session = Depends(get_db)):
     """Delete a rubric and all its dimensions (cascade)."""
     rubric = db.query(Rubric).filter(Rubric.id == rubric_id).first()

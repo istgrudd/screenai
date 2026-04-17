@@ -1,0 +1,138 @@
+"""Authentication router — register, login, logout, current user.
+
+Endpoints:
+    POST /api/auth/register  — Public; creates a candidate account.
+    POST /api/auth/login     — Public; returns a JWT.
+    POST /api/auth/logout    — Auth; client-side token discard.
+    GET  /api/auth/me        — Auth; return current user's profile.
+"""
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, EmailStr, Field
+from sqlalchemy.orm import Session
+
+from backend.database import get_db
+from backend.middleware.auth_middleware import get_current_user
+from backend.models.user import User, UserRole
+from backend.services.auth_service import authenticate_user, create_access_token
+from backend.utils.security import hash_password
+
+router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+
+# ---------------------------------------------------------------------------
+# Pydantic schemas
+# ---------------------------------------------------------------------------
+
+class RegisterRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(..., min_length=8, max_length=72)
+    full_name: str = Field(..., min_length=1, max_length=255)
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class UserOut(BaseModel):
+    id: int
+    email: str
+    full_name: str
+    role: str
+    is_active: bool
+
+    @classmethod
+    def from_user(cls, user: User) -> "UserOut":
+        return cls(
+            id=user.id,
+            email=user.email,
+            full_name=user.full_name,
+            role=user.role.value if hasattr(user.role, "value") else str(user.role),
+            is_active=user.is_active,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
+
+@router.post("/register", status_code=status.HTTP_201_CREATED)
+def register(payload: RegisterRequest, db: Session = Depends(get_db)):
+    """Register a new candidate account. Role is always 'candidate'."""
+    email = payload.email.lower()
+    existing = db.query(User).filter(User.email == email).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email is already registered",
+        )
+
+    user = User(
+        email=email,
+        password_hash=hash_password(payload.password),
+        full_name=payload.full_name.strip(),
+        role=UserRole.CANDIDATE,
+        is_active=True,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    token = create_access_token(user)
+    return {
+        "success": True,
+        "data": {
+            "access_token": token,
+            "token_type": "bearer",
+            "user": UserOut.from_user(user).model_dump(),
+        },
+        "error": None,
+    }
+
+
+@router.post("/login")
+def login(payload: LoginRequest, db: Session = Depends(get_db)):
+    """Authenticate a user and return a JWT."""
+    user = authenticate_user(db, payload.email, payload.password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+        )
+
+    token = create_access_token(user)
+    return {
+        "success": True,
+        "data": {
+            "access_token": token,
+            "token_type": "bearer",
+            "user": UserOut.from_user(user).model_dump(),
+        },
+        "error": None,
+    }
+
+
+@router.post("/logout")
+def logout(current_user: User = Depends(get_current_user)):
+    """Logout endpoint.
+
+    JWTs are stateless, so logout is handled client-side by discarding the
+    token. This endpoint exists to let the client signal intent and to
+    reserve a hook for future token-revocation (e.g. blacklist).
+    """
+    return {
+        "success": True,
+        "data": {"message": "Logged out"},
+        "error": None,
+    }
+
+
+@router.get("/me")
+def me(current_user: User = Depends(get_current_user)):
+    """Return the authenticated user's profile."""
+    return {
+        "success": True,
+        "data": UserOut.from_user(current_user).model_dump(),
+        "error": None,
+    }

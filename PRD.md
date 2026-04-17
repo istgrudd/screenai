@@ -1,7 +1,14 @@
 # Product Requirements Document (PRD)
-## Sistem Screening Rekrutasi Otomatis Berbasis RAG dan NER dengan Explainable AI
+## ScreenAI — Sistem Screening Rekrutasi Otomatis Berbasis RAG dan NER dengan Explainable AI
 
-> **Scope:** MVP — local single-user system, no authentication, no deployment.
+---
+
+## Phase Status
+
+| Phase | Scope | Status |
+|---|---|---|
+| **Phase 1 — MVP** | Core pipeline + local dashboard (no auth) | ✅ Complete |
+| **Phase 2 — Production** | RBAC + deployment + certificate verification | 🔄 In Progress |
 
 ---
 
@@ -19,9 +26,9 @@ Platform berbasis AI yang mengotomatiskan proses seleksi awal kandidat (CV scree
 
 ---
 
-## 2. Ruang Lingkup MVP
+## 2. Ruang Lingkup
 
-### In-Scope
+### Phase 1 — MVP (✅ Complete)
 
 - Ekstraksi teks dari PDF CV dan sertifikat bahasa (ATS-compatible only).
 - Anonimisasi otomatis identitas kandidat via IndoBERT NER.
@@ -30,100 +37,141 @@ Platform berbasis AI yang mengotomatiskan proses seleksi awal kandidat (CV scree
 - Ringkasan profil kandidat.
 - Dashboard rekruter: ranking, detail kandidat, override penilaian.
 - Batch processing dokumen.
+- EPrT language certificate bonus scoring.
+- Reveal Identity feature (post-evaluation).
 
-### Out-of-Scope (MVP)
+### Phase 2 — Production (🔄 In Progress)
 
-- Evaluasi sistem binary classification (ground truth belum tersedia — dikerjakan terpisah setelah MVP).
-- Generator pertanyaan wawancara.
-- Audit log override.
-- Autentikasi / user login.
-- Deployment ke server publik.
+- **RBAC** — Role-Based Access Control (Super Admin, Recruiter, Candidate).
+- **Authentication** — register, login, JWT-based session.
+- **Deployment** — VPS/cloud hosting, accessible via public URL.
+- **Certificate Ownership Verification** — name matching CV vs sertifikat.
+- **Audit Log** — log semua tindakan override rekruter.
+
+### Out-of-Scope (Both Phases)
+
 - PDF berbasis scan / gambar (OCR).
-- Sertifikat bahasa non-EPrT.
+- Sertifikat bahasa non-EPrT sebagai standar utama.
+- Evaluasi binary classification (ground truth belum tersedia).
+- Generator pertanyaan wawancara.
 
 ---
 
 ## 3. Fitur
 
-### Modul Ekstraksi Dokumen
+### Phase 1 Features (✅ Implemented)
+
+| ID | Fitur | Status |
+|---|---|---|
+| F-01 | Upload PDF (CV + sertifikat bahasa) via antarmuka web | ✅ |
+| F-02 | Ekstraksi teks dari PDF menggunakan PyMuPDF | ✅ |
+| F-03 | Normalisasi & segmentasi teks per seksi | ✅ |
+| F-04 | Deteksi entitas identitas via IndoBERT NER | ✅ |
+| F-05 | Anonimisasi otomatis dengan token anonim | ✅ |
+| F-07 | Konfigurasi rubrik per posisi | ✅ |
+| F-08 | Indexing rubrik ke ChromaDB | ✅ |
+| F-09 | Pipeline RAG: Embedding → Retrieval → Augmentation → Generation | ✅ |
+| F-10 | Competency-based inference | ✅ |
+| F-11 | Output skor per dimensi dalam format JSON | ✅ |
+| F-12 | Justifikasi berbasis bukti per dimensi | ✅ |
+| F-13 | Ringkasan profil naratif per kandidat | ✅ |
+| F-15 | Ranking kandidat berdasarkan skor komposit | ✅ |
+| F-16 | Halaman detail kandidat | ✅ |
+| F-17 | Override skor penilaian oleh rekruter | ✅ |
+| F-18 | Batch processing dokumen | ✅ |
+| F-19 | EPrT certificate bonus scoring (CEFR mapping) | ✅ |
+| F-20 | Reveal Identity (post-evaluation) | ✅ |
+| F-21 | Certificate ownership name matching | 🔄 Phase 2 |
+
+### Phase 2 Features (🔄 Planned)
+
+#### Modul Autentikasi & RBAC
+
+| ID | Fitur | Role | Prioritas |
+|---|---|---|---|
+| F-30 | Registrasi akun Candidate | Candidate | Must Have |
+| F-31 | Login / Logout (JWT) | All roles | Must Have |
+| F-32 | Role assignment oleh Super Admin | Super Admin | Must Have |
+| F-33 | Route protection per role | All | Must Have |
+
+#### Role Definitions
+
+| Role | Akses |
+|---|---|
+| **Super Admin** | Semua fitur + manage users + manage rubrics |
+| **Recruiter** | Dashboard, detail kandidat, override, reveal identity, run evaluation |
+| **Candidate** | Upload CV + sertifikat, lihat status lamaran sendiri |
+
+#### Modul Deployment
 
 | ID | Fitur | Prioritas |
 |---|---|---|
-| F-01 | Upload PDF (CV + sertifikat bahasa) via antarmuka web | Must Have |
-| F-02 | Ekstraksi teks dari PDF menggunakan PyMuPDF | Must Have |
-| F-03 | Normalisasi & segmentasi teks per seksi (pendidikan, pengalaman, skill) | Must Have |
+| F-40 | Backend deployed ke VPS/cloud (Railway/Render/DigitalOcean) | Must Have |
+| F-41 | Frontend deployed (Vercel/Netlify) | Must Have |
+| F-42 | Environment variables configured for production | Must Have |
+| F-43 | CORS configured for production domain | Must Have |
+| F-44 | Database migration: SQLite → PostgreSQL (production) | Should Have |
 
-### Modul Blind Screening (NER)
-
-| ID | Fitur | Prioritas |
-|---|---|---|
-| F-04 | Deteksi entitas identitas: PERSON, LOC, ORG, kontak, nomor ID | Must Have |
-| F-05 | Anonimisasi otomatis — ganti entitas dengan token anonim (`[PERSON_1]`, dst.) | Must Have |
-| F-06 | Endpoint untuk melihat hasil anonimisasi (validasi manual) | Should Have |
-
-### Modul Evaluasi Kompetensi (RAG)
+#### Modul Tambahan
 
 | ID | Fitur | Prioritas |
 |---|---|---|
-| F-07 | Konfigurasi rubrik per posisi (kompetensi, bobot, indikator konkret) | Must Have |
-| F-08 | Indexing rubrik ke vector store (ChromaDB) | Must Have |
-| F-09 | Pipeline RAG: Embedding → Retrieval → Augmentation → Generation | Must Have |
-| F-10 | Competency-based inference: mapping kriteria abstrak ke indikator CV | Must Have |
-| F-11 | Output skor per dimensi dalam format JSON terstruktur | Must Have |
-
-### Modul XAI
-
-| ID | Fitur | Prioritas |
-|---|---|---|
-| F-12 | Justifikasi berbasis bukti: setiap skor disertai kutipan spesifik dari CV | Must Have |
-| F-13 | Ringkasan profil naratif per kandidat | Must Have |
-
-### Dashboard Rekruter
-
-| ID | Fitur | Prioritas |
-|---|---|---|
-| F-15 | Ranking kandidat berdasarkan skor komposit, filter per posisi | Must Have |
-| F-16 | Halaman detail kandidat: skor per dimensi + justifikasi XAI + ringkasan profil | Must Have |
-| F-17 | Override skor penilaian oleh rekruter | Must Have |
-| F-18 | Batch processing seluruh dokumen setelah rekrutasi ditutup | Must Have |
+| F-50 | Audit log: catat semua override (old score, new score, reason, timestamp) | Should Have |
+| F-51 | Candidate dapat melihat status lamaran mereka sendiri | Should Have |
+| F-52 | Super Admin dashboard: user management, system stats | Should Have |
 
 ---
 
 ## 4. Stack Teknologi
 
-| Layer | Teknologi |
-|---|---|
-| PDF Parsing | PyMuPDF |
-| NER | IndoBERT (`ageng-anugrah/indobert-large-p2-finetuned-ner`) via Hugging Face |
-| RAG & Orchestration | LangChain |
-| Vector Store | ChromaDB (local) |
-| LLM Inference | DeepSeek V3 via OpenAI-compatible endpoint |
-| Backend | FastAPI |
-| Frontend | React + Vite + Tailwind + shadcn/ui |
-| Database | SQLite |
+| Layer | Phase 1 | Phase 2 Addition |
+|---|---|---|
+| PDF Parsing | PyMuPDF | — |
+| NER | IndoBERT via Hugging Face | — |
+| RAG & Orchestration | LangChain | — |
+| Vector Store | ChromaDB (local) | ChromaDB (persistent) |
+| LLM Inference | DeepSeek V3 | — |
+| Backend | FastAPI | + JWT auth (python-jose) |
+| Frontend | React + Vite + Tailwind + shadcn/ui | + Auth pages |
+| Database | SQLite | PostgreSQL (production) |
+| Deployment | Local | Railway / Render + Vercel |
 
 ---
 
 ## 5. Alur Sistem
 
+### Phase 1 (Current)
 ```
 Upload CV/Sertifikat (PDF)
+    → Name matching (CV vs certificate)
     → Ekstraksi teks (PyMuPDF)
     → Anonimisasi identitas (IndoBERT NER)
     → RAG Pipeline (LangChain + ChromaDB) ← Rubrik dari rekruter
     → LLM Inference (DeepSeek V3)
-    → Skor JSON + Justifikasi + Ringkasan Profil
-    → Dashboard Rekruter (ranking, detail, override)
+    → Skor JSON + Justifikasi + Ringkasan Profil + Language Bonus
+    → Dashboard Rekruter (ranking, detail, override, reveal identity)
+```
+
+### Phase 2 (Target)
+```
+Candidate: Register → Login → Upload CV (pilih posisi) → Submit
+                                        ↓
+Recruiter: Login → Dashboard → Filter per posisi → Run Evaluation
+                                        ↓
+                          Ranking + Skor + Justifikasi XAI
+                                        ↓
+                    Override (logged) → Reveal Identity → Keputusan
 ```
 
 ---
 
 ## 6. Non-Fungsional
 
-| Kategori | Target |
-|---|---|
-| Data privacy | Semua data tetap lokal, tidak dikirim ke layanan publik |
-| Output consistency | Respons LLM wajib dalam format JSON terstruktur |
-| NER accuracy | Miss rate identitas ≤ 5% (validasi manual sampel 10% dokumen) |
-| Batch performance | 240 dokumen selesai diproses tanpa timeout |
-| Modularity | Komponen pipeline (LLM, embedding, vector store) dapat diganti tanpa ubah arsitektur |
+| Kategori | Phase 1 | Phase 2 |
+|---|---|---|
+| Data privacy | Data lokal | Data di server, enkripsi at-rest |
+| Auth security | — | JWT with expiry, bcrypt password hashing |
+| Output consistency | JSON terstruktur | JSON terstruktur |
+| NER accuracy | Miss rate ≤ 5% | Miss rate ≤ 5% |
+| Batch performance | 240 dokumen tanpa timeout | Async queue untuk scalability |
+| Availability | Local only | 99% uptime target (VPS) |

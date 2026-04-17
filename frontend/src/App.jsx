@@ -1,25 +1,66 @@
-import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
+import { BrowserRouter, Routes, Route, NavLink, Navigate, useLocation } from "react-router-dom";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   LayoutDashboard,
   Upload,
   FileText,
   BarChart3,
+  LogOut,
+  ClipboardList,
 } from "lucide-react";
 
 import DashboardPage from "@/pages/DashboardPage";
 import UploadPage from "@/pages/UploadPage";
 import RubricConfigPage from "@/pages/RubricConfigPage";
 import CandidateDetailPage from "@/pages/CandidateDetailPage";
+import LoginPage from "@/pages/LoginPage";
+import RegisterPage from "@/pages/RegisterPage";
+import MyApplicationsPage from "@/pages/MyApplicationsPage";
 
-const navLinks = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/upload", label: "Upload", icon: Upload },
-  { to: "/rubrics", label: "Rubrics", icon: FileText },
-];
+import ProtectedRoute from "@/components/ProtectedRoute";
+import {
+  getCurrentUser,
+  isAuthenticated,
+  logout,
+  ROLES,
+  defaultPathForRole,
+} from "@/lib/auth";
+
+const ROLE_LABEL = {
+  super_admin: "Super Admin",
+  recruiter: "Recruiter",
+  candidate: "Candidate",
+};
+
+const ROLE_BADGE_VARIANT = {
+  super_admin: "default",
+  recruiter: "secondary",
+  candidate: "outline",
+};
+
+function navLinksForRole(role) {
+  if (role === ROLES.CANDIDATE) {
+    return [
+      { to: "/upload", label: "Upload", icon: Upload },
+      { to: "/my-applications", label: "My Applications", icon: ClipboardList },
+    ];
+  }
+  if (role === ROLES.RECRUITER || role === ROLES.SUPER_ADMIN) {
+    return [
+      { to: "/", label: "Dashboard", icon: LayoutDashboard },
+      { to: "/rubrics", label: "Rubrics", icon: FileText },
+    ];
+  }
+  return [];
+}
 
 function Sidebar() {
+  const user = getCurrentUser();
+  const links = navLinksForRole(user?.role);
+
   return (
     <aside className="fixed top-0 left-0 z-40 h-screen w-64 border-r border-border bg-card flex flex-col">
       {/* Brand */}
@@ -37,7 +78,7 @@ function Sidebar() {
 
       {/* Nav */}
       <nav className="flex-1 px-3 py-4 space-y-1">
-        {navLinks.map((link) => (
+        {links.map((link) => (
           <NavLink
             key={link.to}
             to={link.to}
@@ -56,36 +97,134 @@ function Sidebar() {
         ))}
       </nav>
 
-      {/* Footer */}
-      <div className="px-6 py-4 border-t border-border">
-        <p className="text-xs text-muted-foreground">
-          Capstone Design © 2026
-        </p>
-      </div>
+      {/* User + footer */}
+      {user && (
+        <div className="border-t border-border px-4 py-4 space-y-3">
+          <div className="space-y-1">
+            <p className="text-sm font-medium truncate" title={user.email}>
+              {user.email}
+            </p>
+            <Badge
+              variant={ROLE_BADGE_VARIANT[user.role] || "secondary"}
+              className="text-[10px] uppercase tracking-wide"
+            >
+              {ROLE_LABEL[user.role] || user.role}
+            </Badge>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full justify-start"
+            onClick={logout}
+          >
+            <LogOut className="w-4 h-4" />
+            Log out
+          </Button>
+          <p className="text-xs text-muted-foreground pt-1">
+            Capstone Design © 2026
+          </p>
+        </div>
+      )}
     </aside>
   );
+}
+
+/**
+ * Shell for authenticated pages — sidebar + content area.
+ * Login/register pages render without this wrapper.
+ */
+function AuthenticatedShell({ children }) {
+  return (
+    <div className="flex min-h-screen bg-background">
+      <Sidebar />
+      <main className="flex-1 ml-64">
+        <div className="p-6 lg:p-8 max-w-7xl mx-auto">{children}</div>
+      </main>
+    </div>
+  );
+}
+
+/** Redirect "/" to the right landing page based on auth + role. */
+function RootRedirect() {
+  const location = useLocation();
+  if (!isAuthenticated()) {
+    return <Navigate to="/login" replace state={{ from: location }} />;
+  }
+  const user = getCurrentUser();
+  const target = defaultPathForRole(user?.role);
+  if (target === "/") {
+    // recruiter/super_admin already land at "/" — render Dashboard directly
+    return (
+      <ProtectedRoute roles={[ROLES.RECRUITER, ROLES.SUPER_ADMIN]}>
+        <DashboardPage />
+      </ProtectedRoute>
+    );
+  }
+  return <Navigate to={target} replace />;
 }
 
 export default function App() {
   return (
     <BrowserRouter>
       <TooltipProvider>
-        <div className="flex min-h-screen bg-background">
-          <Sidebar />
-          <main className="flex-1 ml-64">
-            <div className="p-6 lg:p-8 max-w-7xl mx-auto">
-              <Routes>
-                <Route path="/" element={<DashboardPage />} />
-                <Route path="/upload" element={<UploadPage />} />
-                <Route path="/rubrics" element={<RubricConfigPage />} />
-                <Route
-                  path="/candidates/:id"
-                  element={<CandidateDetailPage />}
-                />
-              </Routes>
-            </div>
-          </main>
-        </div>
+        <Routes>
+          {/* Public */}
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+
+          {/* Authenticated shell */}
+          <Route
+            path="/"
+            element={
+              <AuthenticatedShell>
+                <RootRedirect />
+              </AuthenticatedShell>
+            }
+          />
+          <Route
+            path="/upload"
+            element={
+              <AuthenticatedShell>
+                <ProtectedRoute roles={[ROLES.CANDIDATE]}>
+                  <UploadPage />
+                </ProtectedRoute>
+              </AuthenticatedShell>
+            }
+          />
+          <Route
+            path="/my-applications"
+            element={
+              <AuthenticatedShell>
+                <ProtectedRoute roles={[ROLES.CANDIDATE]}>
+                  <MyApplicationsPage />
+                </ProtectedRoute>
+              </AuthenticatedShell>
+            }
+          />
+          <Route
+            path="/rubrics"
+            element={
+              <AuthenticatedShell>
+                <ProtectedRoute roles={[ROLES.RECRUITER, ROLES.SUPER_ADMIN]}>
+                  <RubricConfigPage />
+                </ProtectedRoute>
+              </AuthenticatedShell>
+            }
+          />
+          <Route
+            path="/candidates/:id"
+            element={
+              <AuthenticatedShell>
+                <ProtectedRoute roles={[ROLES.RECRUITER, ROLES.SUPER_ADMIN]}>
+                  <CandidateDetailPage />
+                </ProtectedRoute>
+              </AuthenticatedShell>
+            }
+          />
+
+          {/* Fallback */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
         <Toaster richColors position="top-right" />
       </TooltipProvider>
     </BrowserRouter>

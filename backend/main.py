@@ -11,10 +11,14 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.config import settings
 from backend.database import init_db
+from backend.routers.auth import router as auth_router
 from backend.routers.upload import router as upload_router
 from backend.routers.rubrics import router as rubrics_router
 from backend.routers.evaluation import router as evaluation_router
-from backend.routers.candidates import router as candidates_router
+from backend.routers.candidates import (
+    router as candidates_router,
+    my_applications_router,
+)
 
 
 @asynccontextmanager
@@ -59,10 +63,12 @@ app.add_middleware(
 )
 
 # --- Routers ---
+app.include_router(auth_router)
 app.include_router(upload_router)
 app.include_router(rubrics_router)
 app.include_router(evaluation_router)
 app.include_router(candidates_router)
+app.include_router(my_applications_router)
 
 
 # --- Health Check ---

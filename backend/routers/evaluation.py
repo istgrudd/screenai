@@ -13,8 +13,10 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
+from backend.middleware.auth_middleware import require_role
 from backend.models.candidate import Candidate, Document
 from backend.models.rubric import Rubric
+from backend.models.user import UserRole
 from backend.services.rag_pipeline import evaluate_candidate
 from backend.services.scoring import cefr_from_score, store_evaluation_results
 
@@ -25,7 +27,10 @@ class EvaluateRequest(BaseModel):
     rubric_id: int
 
 
-@router.post("/evaluate")
+@router.post(
+    "/evaluate",
+    dependencies=[Depends(require_role(UserRole.RECRUITER, UserRole.SUPER_ADMIN))],
+)
 async def run_batch_evaluation(
     payload: EvaluateRequest,
     db: Session = Depends(get_db),

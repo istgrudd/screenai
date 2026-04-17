@@ -17,7 +17,9 @@ from sqlalchemy.orm import Session
 
 from backend.config import settings
 from backend.database import get_db
+from backend.middleware.auth_middleware import get_current_user, require_role
 from backend.models.candidate import Candidate, Document
+from backend.models.user import User, UserRole
 from backend.services.extractor import (
     detect_certificate_type,
     extract_eprt_score,
@@ -46,11 +48,12 @@ def _is_certificate_content(text: str) -> bool:
     )
 
 
-@router.post("/upload")
+@router.post("/upload", dependencies=[Depends(require_role(UserRole.CANDIDATE))])
 def upload_documents(
     files: list[UploadFile] = File(...),
     rubric_id: int | None = Form(None),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Upload one or more PDF files.
 
@@ -116,7 +119,11 @@ def upload_documents(
     # Rationale: CV + language certificate typically arrive together for
     # the same applicant. Callers who want separate candidates should
     # issue separate upload requests.
-    candidate = Candidate(status="anonymized", rubric_id=rubric_id)
+    candidate = Candidate(
+        status="anonymized",
+        rubric_id=rubric_id,
+        user_id=current_user.id,
+    )
     db.add(candidate)
     db.flush()
 

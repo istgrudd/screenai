@@ -3,25 +3,39 @@
  * Base URL: http://127.0.0.1:8000/api
  */
 
+import { getToken, removeToken } from "@/lib/auth";
+
 const BASE_URL = "http://127.0.0.1:8000/api";
 
 /**
  * Generic fetch wrapper that handles JSON responses and errors.
  * Unwraps the { success, data, error } envelope.
+ * Automatically attaches Authorization: Bearer <token> if present.
  */
 async function request(endpoint, options = {}) {
   const url = `${BASE_URL}${endpoint}`;
+  const token = getToken();
   const config = {
     ...options,
     headers: {
       ...(options.body instanceof FormData
         ? {}
         : { "Content-Type": "application/json" }),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options.headers,
     },
   };
 
   const res = await fetch(url, config);
+
+  if (res.status === 401) {
+    // Token missing / invalid / expired — force re-login.
+    removeToken();
+    if (!window.location.pathname.startsWith("/login")) {
+      window.location.assign("/login");
+    }
+    throw new Error("Unauthorized");
+  }
 
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;
@@ -39,6 +53,34 @@ async function request(endpoint, options = {}) {
     throw new Error(json.error || "Unknown API error");
   }
   return json.data;
+}
+
+// ── Auth ────────────────────────────────────────────────────────────────────
+
+export async function login(email, password) {
+  return request("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export async function register(email, password, fullName) {
+  return request("/auth/register", {
+    method: "POST",
+    body: JSON.stringify({ email, password, full_name: fullName }),
+  });
+}
+
+export async function logoutApi() {
+  return request("/auth/logout", { method: "POST" });
+}
+
+export async function getMe() {
+  return request("/auth/me");
+}
+
+export async function listMyApplications() {
+  return request("/my-applications");
 }
 
 // ── Upload ──────────────────────────────────────────────────────────────────

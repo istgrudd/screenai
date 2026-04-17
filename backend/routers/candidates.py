@@ -11,11 +11,21 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
+from backend.middleware.auth_middleware import get_current_user, require_role
 from backend.models.candidate import Candidate, Document, DimensionScore
-from backend.models.rubric import Dimension
+from backend.models.rubric import Dimension, Rubric
+from backend.models.user import User, UserRole
 from backend.services.scoring import cefr_from_score
 
+_recruiter_or_admin = require_role(UserRole.RECRUITER, UserRole.SUPER_ADMIN)
+_candidate_only = require_role(UserRole.CANDIDATE)
+
 router = APIRouter(prefix="/api/candidates", tags=["candidates"])
+
+# Separate router for the candidate-owned view (GET /api/my-applications).
+my_applications_router = APIRouter(
+    prefix="/api/my-applications", tags=["my-applications"]
+)
 
 
 # ---------------------------------------------------------------------------
@@ -31,7 +41,7 @@ class ScoreOverride(BaseModel):
 # Endpoints
 # ---------------------------------------------------------------------------
 
-@router.get("")
+@router.get("", dependencies=[Depends(_recruiter_or_admin)])
 def list_candidates(
     rubric_id: int | None = Query(None, description="Filter by rubric ID"),
     db: Session = Depends(get_db),
@@ -105,7 +115,7 @@ def list_candidates(
     }
 
 
-@router.get("/{candidate_id}")
+@router.get("/{candidate_id}", dependencies=[Depends(_recruiter_or_admin)])
 def get_candidate(candidate_id: int, db: Session = Depends(get_db)):
     """Get detailed candidate info: scores, justifications, profile summary."""
     candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
@@ -191,7 +201,10 @@ def get_candidate(candidate_id: int, db: Session = Depends(get_db)):
     }
 
 
-@router.put("/{candidate_id}/scores/{dim_score_id}")
+@router.put(
+    "/{candidate_id}/scores/{dim_score_id}",
+    dependencies=[Depends(_recruiter_or_admin)],
+)
 def override_score(
     candidate_id: int,
     dim_score_id: int,
@@ -255,5 +268,66 @@ def override_score(
             "new_composite_score": candidate.composite_score,
             "reason": payload.reason,
         },
+        "error": None,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Candidate-owned view
+# ---------------------------------------------------------------------------
+
+@my_applications_router.get("", dependencies=[Depends(_candidate_only)])
+def list_my_applications(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List the current candidate's own uploaded applications.
+
+    Returns the candidate rows owned by `current_user`, each with the
+    position they applied to and — once evaluated — the composite score.
+    Composite/language/CEFR fields are null while status != 'scored'.
+    """
+    candidates = (
+        db.query(Candidate)
+        .filter(Candidate.user_id == current_user.id)
+        .order_by(Candidate.created_at.desc())
+        .all()
+    )
+
+    results = []
+    for cand in candidates:
+        cv_doc = (
+            db.query(Document)
+            .filter(
+                Document.candidate_id == cand.id,
+                Document.document_type == "cv",
+            )
+            .first()
+        )
+        rubric = (
+            db.query(Rubric).filter(Rubric.id == cand.rubric_id).first()
+            if cand.rubric_id
+            else None
+        )
+
+        is_scored = cand.status == "scored"
+        cefr_level, _ = cefr_from_score(cand.language_score)
+
+        results.append({
+            "candidate_id": cand.id,
+            "anonymous_id": cand.anonymous_id,
+            "status": cand.status,
+            "position": rubric.position if rubric else None,
+            "rubric_name": rubric.name if rubric else None,
+            "composite_score": cand.composite_score if is_scored else None,
+            "language_score": cand.language_score if is_scored else None,
+            "cefr_level": cefr_level if is_scored else None,
+            "filename": cv_doc.filename if cv_doc else None,
+            "created_at": cand.created_at.isoformat() if cand.created_at else None,
+        })
+
+    return {
+        "success": True,
+        "data": results,
         "error": None,
     }
