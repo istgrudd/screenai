@@ -64,6 +64,9 @@ _EXPECTED_COLUMNS: dict[str, dict[str, str]] = {
         "language_bonus": "FLOAT",
         "user_id": "INTEGER",
     },
+    "users": {
+        "is_verified": "BOOLEAN DEFAULT 0",
+    },
 }
 
 

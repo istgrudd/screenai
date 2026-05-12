@@ -5,7 +5,7 @@
 
 import { getToken, removeToken } from "@/lib/auth";
 
-const BASE_URL = "http://127.0.0.1:8000/api";
+const BASE_URL = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000/api";
 
 /**
  * Generic fetch wrapper that handles JSON responses and errors.
@@ -35,6 +35,17 @@ async function request(endpoint, options = {}) {
       window.location.assign("/login");
     }
     throw new Error("Unauthorized");
+  }
+
+  if (res.status === 403) {
+    let detail = "Forbidden";
+    try {
+      const body = await res.json();
+      detail = body.detail || body.error || JSON.stringify(body);
+    } catch {
+      // ignore
+    }
+    throw new Error(detail);
   }
 
   if (!res.ok) {
@@ -73,6 +84,17 @@ export async function register(email, password, fullName) {
 
 export async function logoutApi() {
   return request("/auth/logout", { method: "POST" });
+}
+
+export async function verifyEmail(token) {
+  return request(`/auth/verify-email?token=${encodeURIComponent(token)}`);
+}
+
+export async function resendVerification(email) {
+  return request("/auth/resend-verification", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
 }
 
 export async function getMe() {

@@ -40,6 +40,7 @@ class User(Base):
         default=UserRole.CANDIDATE,
     )
     is_active = Column(Boolean, nullable=False, default=True)
+    is_verified = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, nullable=False, default=_utcnow)
 
     def __repr__(self) -> str:

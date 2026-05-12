@@ -47,8 +47,14 @@ export default function RegisterPage() {
     }
     setSubmitting(true);
     try {
-      await registerApi(email.trim(), password, fullName.trim());
-      navigate("/login", { replace: true, state: { registered: true } });
+      const data = await registerApi(email.trim(), password, fullName.trim());
+      navigate("/login", {
+        replace: true,
+        state: {
+          pendingVerification: true,
+          email: data.email,
+        },
+      });
     } catch (err) {
       toast.error(err.message || "Registration failed");
     } finally {

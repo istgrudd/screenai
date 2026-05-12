@@ -14,7 +14,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-import { login as loginApi } from "@/lib/api";
+import { login as loginApi, resendVerification } from "@/lib/api";
 import {
   saveToken,
   isAuthenticated,
@@ -28,6 +28,10 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [pendingEmail, setPendingEmail] = useState(
+    location.state?.pendingVerification ? location.state.email : null
+  );
+  const [resending, setResending] = useState(false);
 
   useEffect(() => {
     if (isAuthenticated()) {
@@ -39,6 +43,9 @@ export default function LoginPage() {
   useEffect(() => {
     if (location.state?.registered) {
       toast.success("Account created. Please log in.");
+    }
+    if (location.state?.verified) {
+      toast.success("Email verified! You can now sign in.");
     }
   }, [location.state]);
 
@@ -61,6 +68,19 @@ export default function LoginPage() {
     }
   };
 
+  const resendEmail = async () => {
+    if (!pendingEmail) return;
+    setResending(true);
+    try {
+      await resendVerification(pendingEmail);
+      toast.success("Verification email sent. Check your inbox.");
+    } catch (err) {
+      toast.error(err.message || "Failed to resend verification email.");
+    } finally {
+      setResending(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-6">
       <Card className="w-full max-w-md">
@@ -74,6 +94,24 @@ export default function LoginPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {pendingEmail && (
+            <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+              <p className="font-medium">Verifikasi email diperlukan</p>
+              <p className="mt-1 text-xs">
+                Kami mengirim link verifikasi ke{" "}
+                <span className="font-mono font-medium">{pendingEmail}</span>.
+                Cek inbox atau folder spam kamu.
+              </p>
+              <button
+                type="button"
+                onClick={resendEmail}
+                disabled={resending}
+                className="mt-2 text-xs font-medium underline underline-offset-2 hover:no-underline disabled:opacity-50"
+              >
+                {resending ? "Mengirim..." : "Kirim ulang email verifikasi"}
+              </button>
+            </div>
+          )}
           <form onSubmit={onSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>

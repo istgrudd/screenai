@@ -14,7 +14,13 @@ from sqlalchemy.orm import Session
 from backend.database import get_db
 from backend.middleware.auth_middleware import get_current_user
 from backend.models.user import User, UserRole
-from backend.services.auth_service import authenticate_user, create_access_token
+from backend.services.auth_service import (
+    authenticate_user,
+    create_access_token,
+    create_verification_token,
+    verify_email_token,
+)
+from backend.services.email_service import send_verification_email
 from backend.utils.security import hash_password
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -33,6 +39,10 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+
+
+class ResendVerificationRequest(BaseModel):
+    email: EmailStr
 
 
 class UserOut(BaseModel):
@@ -74,18 +84,20 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
         full_name=payload.full_name.strip(),
         role=UserRole.CANDIDATE,
         is_active=True,
+        is_verified=False,
     )
     db.add(user)
     db.commit()
     db.refresh(user)
 
-    token = create_access_token(user)
+    token = create_verification_token(db, user)
+    send_verification_email(user.email, user.full_name, token)
+
     return {
         "success": True,
         "data": {
-            "access_token": token,
-            "token_type": "bearer",
-            "user": UserOut.from_user(user).model_dump(),
+            "message": "Registrasi berhasil. Cek email kamu untuk verifikasi akun.",
+            "email": user.email,
         },
         "error": None,
     }
@@ -99,6 +111,12 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
+        )
+
+    if not user.is_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email belum diverifikasi. Cek inbox kamu atau minta kirim ulang.",
         )
 
     token = create_access_token(user)
@@ -124,6 +142,66 @@ def logout(current_user: User = Depends(get_current_user)):
     return {
         "success": True,
         "data": {"message": "Logged out"},
+        "error": None,
+    }
+
+
+@router.get("/verify-email")
+def verify_email(token: str, db: Session = Depends(get_db)):
+    """Verify email address using the token from the verification link.
+
+    Called when the candidate clicks the link in their verification email.
+    On success, the account becomes active and the candidate can log in.
+    """
+    user = verify_email_token(db, token)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Token verifikasi tidak valid atau sudah kadaluarsa.",
+        )
+    return {
+        "success": True,
+        "data": {"message": "Email berhasil diverifikasi. Silakan login."},
+        "error": None,
+    }
+
+
+@router.post("/resend-verification")
+def resend_verification(
+    payload: ResendVerificationRequest, db: Session = Depends(get_db)
+):
+    """Resend the verification email.
+
+    Accepts email only (no password required) to lower friction.
+    Always returns 200 regardless of whether the email exists —
+    this prevents email enumeration attacks.
+    """
+    user = db.query(User).filter(User.email == payload.email.lower()).first()
+
+    if not user or not user.is_active:
+        return {
+            "success": True,
+            "data": {
+                "message": "Jika email terdaftar, link verifikasi telah dikirim ulang."
+            },
+            "error": None,
+        }
+
+    if user.is_verified:
+        return {
+            "success": True,
+            "data": {"message": "Email sudah terverifikasi. Silakan login."},
+            "error": None,
+        }
+
+    token = create_verification_token(db, user)
+    send_verification_email(user.email, user.full_name, token)
+
+    return {
+        "success": True,
+        "data": {
+            "message": "Jika email terdaftar, link verifikasi telah dikirim ulang."
+        },
         "error": None,
     }
 

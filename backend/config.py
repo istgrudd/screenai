@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 480
 
+    # --- Email (Resend) ---
+    resend_api_key: str = ""
+    email_from: str = "noreply@screenai.my.id"
+    email_verification_expire_hours: int = 24
+
     @property
     def cors_origins(self) -> list[str]:
         """Return the list of origins allowed to call the API.
