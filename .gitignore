@@ -36,3 +36,6 @@ Thumbs.db
 # Node / Frontend
 frontend/node_modules/
 frontend/dist/
+
+CLAUDE.md
+PRD.md
