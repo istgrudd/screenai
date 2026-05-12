@@ -22,8 +22,7 @@ data/app.db
 # Vector store persistence
 backend/vectorstore/
 
-# NER model cache
-models/
+/models/
 
 # IDE
 .vscode/
