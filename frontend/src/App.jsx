@@ -19,6 +19,7 @@ import CandidateDetailPage from "@/pages/CandidateDetailPage";
 import LoginPage from "@/pages/LoginPage";
 import RegisterPage from "@/pages/RegisterPage";
 import VerifyEmailPage from "@/pages/VerifyEmailPage";
+import LandingPage from "@/pages/LandingPage";
 import MyApplicationsPage from "@/pages/MyApplicationsPage";
 
 import ProtectedRoute from "@/components/ProtectedRoute";
@@ -51,7 +52,7 @@ function navLinksForRole(role) {
   }
   if (role === ROLES.RECRUITER || role === ROLES.SUPER_ADMIN) {
     return [
-      { to: "/", label: "Dashboard", icon: LayoutDashboard },
+      { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
       { to: "/rubrics", label: "Rubrics", icon: FileText },
     ];
   }
@@ -83,7 +84,7 @@ function Sidebar() {
           <NavLink
             key={link.to}
             to={link.to}
-            end={link.to === "/"}
+            end={link.to === "/dashboard"}
             className={({ isActive }) =>
               `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                 isActive
@@ -145,23 +146,17 @@ function AuthenticatedShell({ children }) {
   );
 }
 
-/** Redirect "/" to the right landing page based on auth + role. */
+/** Redirect "/dashboard" to the right landing page based on auth + role. */
 function RootRedirect() {
   const location = useLocation();
   if (!isAuthenticated()) {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
-  const user = getCurrentUser();
-  const target = defaultPathForRole(user?.role);
-  if (target === "/") {
-    // recruiter/super_admin already land at "/" — render Dashboard directly
-    return (
-      <ProtectedRoute roles={[ROLES.RECRUITER, ROLES.SUPER_ADMIN]}>
-        <DashboardPage />
-      </ProtectedRoute>
-    );
-  }
-  return <Navigate to={target} replace />;
+  return (
+    <ProtectedRoute roles={[ROLES.RECRUITER, ROLES.SUPER_ADMIN]}>
+      <DashboardPage />
+    </ProtectedRoute>
+  );
 }
 
 export default function App() {
@@ -175,8 +170,9 @@ export default function App() {
           <Route path="/verify-email" element={<VerifyEmailPage />} />
 
           {/* Authenticated shell */}
+          <Route path="/" element={<LandingPage />} />
           <Route
-            path="/"
+            path="/dashboard"
             element={
               <AuthenticatedShell>
                 <RootRedirect />
