@@ -4,6 +4,7 @@ Initializes the app, registers middleware & routers, and creates
 database tables on startup.
 """
 
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -19,6 +20,7 @@ from backend.routers.candidates import (
     router as candidates_router,
     my_applications_router,
 )
+from backend.routers.demo import router as demo_router, demo_purge_loop
 
 
 @asynccontextmanager
@@ -40,9 +42,17 @@ async def lifespan(app: FastAPI):
     print("[OK] Data directories ready")
     print(f"[OK] Server running on port {settings.app_port}")
 
+    # --- Demo Mode: start the auto-purge background task ---
+    purge_task: asyncio.Task | None = None
+    if settings.demo_mode:
+        purge_task = asyncio.create_task(demo_purge_loop())
+        print("[OK] Demo mode ENABLED — /api/demo/* active, auto-purge running")
+
     yield
 
     # --- Shutdown ---
+    if purge_task is not None:
+        purge_task.cancel()
     print("Shutting down...")
 
 
@@ -69,6 +79,7 @@ app.include_router(rubrics_router)
 app.include_router(evaluation_router)
 app.include_router(candidates_router)
 app.include_router(my_applications_router)
+app.include_router(demo_router)
 
 
 # --- Health Check ---

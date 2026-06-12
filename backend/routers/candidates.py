@@ -10,9 +10,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from backend.config import settings
 from backend.database import get_db
 from backend.middleware.auth_middleware import get_current_user, require_role
 from backend.models.candidate import Candidate, Document, DimensionScore
+from backend.models.demo_submission import DemoSubmission
 from backend.models.rubric import Dimension, Rubric
 from backend.models.user import User, UserRole
 from backend.services.scoring import cefr_from_score
@@ -61,7 +63,7 @@ def list_candidates(
     candidates = query.order_by(Candidate.composite_score.desc().nullslast()).all()
 
     results = []
-    for rank, cand in enumerate(candidates, start=1):
+    for cand in candidates:
         # Get document info
         doc = (
             db.query(Document)
@@ -92,8 +94,9 @@ def list_candidates(
 
         cefr_level, _ = cefr_from_score(cand.language_score)
         results.append({
-            "rank": rank if cand.composite_score is not None else None,
+            "rank": None,  # assigned after merging demo rows below
             "candidate_id": cand.id,
+            "is_demo": False,
             "anonymous_id": cand.anonymous_id,
             "status": cand.status,
             "composite_score": cand.composite_score,
@@ -108,11 +111,76 @@ def list_candidates(
             "dimension_scores": dim_scores if dim_scores else None,
         })
 
+    # --- Union demo submissions into the ranking (kept in a separate table) ---
+    if settings.demo_mode:
+        results.extend(_demo_rows(db, rubric_id))
+
+    # --- Sort the merged list and assign ranks (scored rows first) ---
+    results.sort(
+        key=lambda r: (r["composite_score"] is None, -(r["composite_score"] or 0.0))
+    )
+    for i, row in enumerate(results, start=1):
+        row["rank"] = i if row["composite_score"] is not None else None
+
     return {
         "success": True,
         "data": results,
         "error": None,
     }
+
+
+def _demo_rows(db: Session, rubric_id: int | None) -> list[dict]:
+    """Build ranking rows from demo_submissions, shaped like candidate rows.
+
+    Demo data lives in its own table; here it is mapped onto the same
+    response shape so the recruiter dashboard shows demo + real candidates
+    in a single ranking. Rows carry ``is_demo: True`` and a null
+    ``candidate_id`` (no detail page).
+    """
+    q = db.query(DemoSubmission)
+    if rubric_id is not None:
+        q = q.filter(DemoSubmission.rubric_id == rubric_id)
+    submissions = q.all()
+
+    # Map dimension name -> id for the filtered rubric so demo breakdowns
+    # line up with the real candidates' dimension columns.
+    dim_id_by_name: dict[str, int] = {}
+    if rubric_id is not None:
+        for d in db.query(Dimension).filter(Dimension.rubric_id == rubric_id).all():
+            dim_id_by_name[d.name.lower()] = d.id
+
+    rows: list[dict] = []
+    for sub in submissions:
+        dim_scores = None
+        if rubric_id is not None and sub.dimension_scores_json:
+            dim_scores = [
+                {
+                    "dimension_id": dim_id_by_name.get(
+                        (ds.get("dimension") or "").lower(), -(idx + 1)
+                    ),
+                    "dimension_name": ds.get("dimension", "Unknown"),
+                    "score": ds.get("score", 0),
+                    "weighted_score": ds.get("weighted_score", 0),
+                    "is_override": False,
+                }
+                for idx, ds in enumerate(sub.dimension_scores_json)
+            ]
+
+        rows.append({
+            "rank": None,
+            "candidate_id": None,
+            "is_demo": True,
+            "anonymous_id": sub.anonymous_id,
+            "display_name": sub.display_name,
+            "status": sub.status,
+            "composite_score": sub.composite_score,
+            "language_score": None,
+            "language_bonus": None,
+            "cefr_level": None,
+            "document": None,
+            "dimension_scores": dim_scores,
+        })
+    return rows
 
 
 @router.get("/{candidate_id}", dependencies=[Depends(_recruiter_or_admin)])

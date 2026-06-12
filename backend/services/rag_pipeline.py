@@ -102,6 +102,7 @@ async def evaluate_candidate(
     rubric_id: int,
     db: Session,
     certificate_data: dict | None = None,
+    max_tokens: int = 4096,
 ) -> dict:
     """Evaluate a candidate's CV against a rubric using the RAG pipeline.
 
@@ -154,7 +155,7 @@ async def evaluate_candidate(
         system_prompt=SYSTEM_PROMPT,
         user_prompt=user_prompt,
         temperature=0.1,
-        max_tokens=4096,
+        max_tokens=max_tokens,
     )
 
     # --- 4. Process and validate response ---

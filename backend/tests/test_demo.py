@@ -1,0 +1,259 @@
+"""Tests for the public Demo Mode endpoints.
+
+The heavy pipeline (IndoBERT NER + DeepSeek LLM) is mocked so tests run
+fast and offline. We verify: the demo surface is hidden when DEMO_MODE is
+off, file validation, the response schema, demo_submissions persistence,
+ranking union, and the concurrency limiter.
+"""
+
+import asyncio
+import threading
+import time
+
+import httpx
+import pytest
+
+import backend.routers.demo as demo_module
+from backend.config import settings
+from backend.database import SessionLocal
+from backend.main import app
+from backend.models.demo_submission import DemoSubmission
+
+
+def _fake_pipeline_result():
+    return {
+        "evaluation": {
+            "composite_score": 82.5,
+            "dimension_scores": [
+                {
+                    "dimension": "Technical Proficiency",
+                    "score": 85.0,
+                    "weight": 0.35,
+                    "weighted_score": 29.75,
+                    "justification": "Bukti kuat.",
+                    "evidence": ["Python", "SQL"],
+                },
+                {
+                    "dimension": "Project & Analytical Experience",
+                    "score": 80.0,
+                    "weight": 0.30,
+                    "weighted_score": 24.0,
+                    "justification": "Proyek relevan.",
+                    "evidence": ["Skripsi"],
+                },
+            ],
+            "profile_summary": (
+                "Kandidat menunjukkan kompetensi teknis yang baik. "
+                "Pengalaman proyek relevan dengan posisi. "
+                "Komunikasi tergolong memadai. "
+                "Memiliki growth mindset yang jelas. "
+                "Kalimat kelima yang seharusnya dipotong."
+            ),
+            "raw_llm_response": "{}",
+        },
+        "entities": [
+            {"text": "Budi Santoso", "label": "PERSON", "replacement": "[PERSON_1]"},
+            {"text": "Universitas Telkom", "label": "ORG", "replacement": "[ORG_1]"},
+        ],
+        "sections": {"skills": "python sql", "education": "telkom"},
+    }
+
+
+@pytest.fixture()
+def mock_pipeline(monkeypatch):
+    """Replace the heavy pipeline with a fast fake."""
+    monkeypatch.setattr(
+        demo_module, "_run_pipeline_sync", lambda path, rubric_id: _fake_pipeline_result()
+    )
+
+
+PDF_BYTES = b"%PDF-1.4\n%fake pdf content\n"
+
+
+# --- Endpoint gating -------------------------------------------------------
+
+def test_evaluate_disabled_returns_404(client):
+    """With DEMO_MODE off (default), the endpoint must be hidden (404)."""
+    resp = client.post(
+        "/api/demo/evaluate",
+        files={"file": ("cv.pdf", PDF_BYTES, "application/pdf")},
+        data={"position_id": "1"},
+    )
+    assert resp.status_code == 404
+
+
+def test_positions_disabled_returns_404(client):
+    resp = client.get("/api/demo/positions")
+    assert resp.status_code == 404
+
+
+def test_positions_enabled(client, demo_enabled):
+    resp = client.get("/api/demo/positions")
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert len(data) == 2
+    assert {p["title"] for p in data} == {
+        "Data Science Intern",
+        "Backend Engineer Intern",
+    }
+
+
+# --- File validation -------------------------------------------------------
+
+def test_reject_non_pdf(client, demo_enabled, mock_pipeline):
+    resp = client.post(
+        "/api/demo/evaluate",
+        files={"file": ("cv.txt", b"hello", "text/plain")},
+        data={"position_id": "1"},
+    )
+    assert resp.status_code == 400
+    assert "PDF" in resp.json()["detail"]
+
+
+def test_reject_oversize(client, demo_enabled, mock_pipeline):
+    big = b"%PDF-1.4\n" + b"0" * (settings.demo_max_upload_mb * 1024 * 1024 + 1)
+    resp = client.post(
+        "/api/demo/evaluate",
+        files={"file": ("cv.pdf", big, "application/pdf")},
+        data={"position_id": "1"},
+    )
+    assert resp.status_code == 413
+
+
+def test_reject_invalid_position(client, demo_enabled, mock_pipeline):
+    resp = client.post(
+        "/api/demo/evaluate",
+        files={"file": ("cv.pdf", PDF_BYTES, "application/pdf")},
+        data={"position_id": "99"},
+    )
+    assert resp.status_code == 400
+
+
+# --- Happy path: schema + persistence + ranking ----------------------------
+
+def test_evaluate_success_schema(client, demo_enabled, mock_pipeline):
+    resp = client.post(
+        "/api/demo/evaluate",
+        files={"file": ("cv.pdf", PDF_BYTES, "application/pdf")},
+        data={"position_id": "1", "name": "Andi"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+
+    # Full response schema
+    for key in (
+        "submission_id",
+        "anonymous_id",
+        "display_name",
+        "position_id",
+        "position_title",
+        "composite_score",
+        "dimension_scores",
+        "entities",
+        "sections",
+        "explanation",
+    ):
+        assert key in data, f"missing key: {key}"
+
+    assert data["display_name"] == "Andi"
+    assert data["anonymous_id"].startswith("DEMO-")
+    assert data["composite_score"] == 82.5
+    assert len(data["dimension_scores"]) == 2
+    assert data["entities"][0]["label"] == "PERSON"
+    # Explanation is truncated to <= 4 sentences (5th sentence dropped)
+    assert "Kalimat kelima" not in data["explanation"]
+
+    # Persisted to the separate demo_submissions table
+    db = SessionLocal()
+    try:
+        row = (
+            db.query(DemoSubmission)
+            .filter(DemoSubmission.id == data["submission_id"])
+            .first()
+        )
+        assert row is not None
+        assert row.composite_score == 82.5
+    finally:
+        db.close()
+
+
+def test_default_name(client, demo_enabled, mock_pipeline):
+    resp = client.post(
+        "/api/demo/evaluate",
+        files={"file": ("cv.pdf", PDF_BYTES, "application/pdf")},
+        data={"position_id": "2"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["data"]["display_name"] == "Pengunjung Pameran"
+
+
+# --- Auto-purge ------------------------------------------------------------
+
+def test_purge_removes_old_rows(client, demo_enabled, mock_pipeline):
+    # Create a submission, then purge with a 0-minute threshold.
+    client.post(
+        "/api/demo/evaluate",
+        files={"file": ("cv.pdf", PDF_BYTES, "application/pdf")},
+        data={"position_id": "1"},
+    )
+    db = SessionLocal()
+    try:
+        before = db.query(DemoSubmission).count()
+    finally:
+        db.close()
+    assert before >= 1
+
+    removed = demo_module.purge_old_demo_submissions(minutes=0)
+    assert removed >= 1
+
+    db = SessionLocal()
+    try:
+        after = db.query(DemoSubmission).count()
+    finally:
+        db.close()
+    assert after == 0
+
+
+# --- Concurrency limiter ---------------------------------------------------
+
+def test_concurrency_limit(demo_enabled, monkeypatch):
+    """5 parallel requests must never run more than demo_max_concurrency
+    evaluations at once (and must actually run >1 in parallel).
+
+    Driven on a single event loop via httpx ASGITransport so the asyncio
+    semaphore is exercised correctly (a thread-pool TestClient would
+    deadlock its portal here).
+    """
+    state = {"current": 0, "max": 0}
+    lock = threading.Lock()
+
+    def slow_pipeline(path, rubric_id):
+        # Runs in the endpoint's worker thread (asyncio.to_thread).
+        with lock:
+            state["current"] += 1
+            state["max"] = max(state["max"], state["current"])
+        time.sleep(0.4)
+        with lock:
+            state["current"] -= 1
+        return _fake_pipeline_result()
+
+    monkeypatch.setattr(demo_module, "_run_pipeline_sync", slow_pipeline)
+
+    async def run():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+            async def fire():
+                return await ac.post(
+                    "/api/demo/evaluate",
+                    files={"file": ("cv.pdf", PDF_BYTES, "application/pdf")},
+                    data={"position_id": "1"},
+                )
+
+            responses = await asyncio.gather(*[fire() for _ in range(5)])
+            return [r.status_code for r in responses]
+
+    codes = asyncio.run(run())
+
+    assert all(code == 200 for code in codes)
+    assert state["max"] <= settings.demo_max_concurrency
+    assert state["max"] >= 2  # parallelism actually occurred (queued, not serial)

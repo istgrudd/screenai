@@ -21,6 +21,7 @@ import RegisterPage from "@/pages/RegisterPage";
 import VerifyEmailPage from "@/pages/VerifyEmailPage";
 import LandingPage from "@/pages/LandingPage";
 import MyApplicationsPage from "@/pages/MyApplicationsPage";
+import DemoPage from "@/pages/DemoPage";
 
 import ProtectedRoute from "@/components/ProtectedRoute";
 import {
@@ -168,6 +169,7 @@ export default function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/verify-email" element={<VerifyEmailPage />} />
+          <Route path="/demo" element={<DemoPage />} />
 
           {/* Authenticated shell */}
           <Route path="/" element={<LandingPage />} />

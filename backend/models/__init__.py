@@ -8,3 +8,4 @@ from backend.models.candidate import Candidate, Document, DimensionScore  # noqa
 from backend.models.rubric import Rubric, Dimension  # noqa: F401
 from backend.models.user import User, UserRole  # noqa: F401
 from backend.models.email_verification import EmailVerification  # noqa: F401
+from backend.models.demo_submission import DemoSubmission  # noqa: F401

@@ -35,6 +35,18 @@ class Settings(BaseSettings):
     # Comma-separated list of allowed CORS origins. Falls back to frontend_url when empty.
     allowed_origins: str = ""
 
+    # --- Demo Mode (exhibition) ---
+    # When True, the public, auth-less /api/demo/* endpoints are active.
+    # Keep False in normal deployments so the demo surface stays disabled.
+    demo_mode: bool = False
+    # Max CV upload size accepted by the demo endpoint (megabytes).
+    demo_max_upload_mb: int = 5
+    # Demo submissions (and their in-memory artifacts) older than this many
+    # minutes are auto-purged by a background task.
+    demo_purge_minutes: int = 60
+    # Max concurrent demo evaluations; extra requests queue on a semaphore.
+    demo_max_concurrency: int = 2
+
     # --- Auth ---
     secret_key: str = "dev-secret-change-me-in-production-min-32-chars"
     jwt_algorithm: str = "HS256"

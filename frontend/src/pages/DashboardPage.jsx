@@ -98,8 +98,8 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [evaluating, setEvaluating] = useState(false);
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     try {
       const [candidateData, rubricData] = await Promise.all([
         listCandidates(selectedRubric !== "all" ? Number(selectedRubric) : null),
@@ -108,14 +108,19 @@ export default function DashboardPage() {
       setCandidates(candidateData);
       setRubrics(rubricData);
     } catch (err) {
-      toast.error(`Failed to load data: ${err.message}`);
+      if (!silent) toast.error(`Failed to load data: ${err.message}`);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchData();
+    // Poll every 5s so demo submissions from visitors appear ~real-time
+    // on a second screen without a manual reload.
+    const interval = setInterval(() => fetchData({ silent: true }), 5000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedRubric]);
 
   const handleEvaluate = async () => {
@@ -291,15 +296,26 @@ export default function DashboardPage() {
               <TableBody>
                 {candidates.map((c) => (
                   <TableRow
-                    key={c.candidate_id}
-                    className="cursor-pointer hover:bg-muted/50 transition-colors"
-                    onClick={() => navigate(`/candidates/${c.candidate_id}`)}
+                    key={c.anonymous_id}
+                    className={`transition-colors ${
+                      c.is_demo
+                        ? "bg-primary/5"
+                        : "cursor-pointer hover:bg-muted/50"
+                    }`}
+                    onClick={() =>
+                      !c.is_demo && navigate(`/candidates/${c.candidate_id}`)
+                    }
                   >
                     <TableCell className="text-center font-medium tabular-nums">
                       {c.rank ?? "—"}
                     </TableCell>
                     <TableCell>
                       <span className="font-mono text-sm">{c.anonymous_id}</span>
+                      {c.is_demo && (
+                        <Badge variant="secondary" className="ml-2 text-[10px]">
+                          DEMO
+                        </Badge>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Badge
