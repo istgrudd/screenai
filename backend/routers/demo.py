@@ -21,14 +21,18 @@ import re
 import tempfile
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, File, Form, UploadFile, HTTPException
+from fastapi import APIRouter, Depends, File, Form, UploadFile, HTTPException
 from sqlalchemy.orm import Session
 
 from backend.config import settings
-from backend.database import SessionLocal
+from backend.database import SessionLocal, get_db
+from backend.middleware.auth_middleware import require_role
 from backend.models.demo_submission import DemoSubmission
+from backend.models.rubric import Dimension, Rubric
+from backend.models.user import UserRole
 from backend.services.anonymizer import anonymize_text
 from backend.services.demo_positions import (
+    canonical_dimension_label,
     ensure_demo_rubrics,
     get_demo_rubric,
     list_demo_rubrics,
@@ -39,6 +43,10 @@ from backend.services.normalizer import normalize_and_segment
 from backend.services.rag_pipeline import evaluate_candidate
 
 router = APIRouter(prefix="/api/demo", tags=["demo"])
+
+# Demo submission detail (E) is a presenter-only surface, so it stays behind
+# recruiter/admin auth even though the rest of the demo router is public.
+_recruiter_or_admin = require_role(UserRole.RECRUITER, UserRole.SUPER_ADMIN)
 
 # Limit concurrent heavy evaluations; extra requests await the semaphore
 # (queue) instead of overwhelming the LLM / NER model during the exhibition.
@@ -255,20 +263,31 @@ async def evaluate_demo(
     # --- Persist to the separate demo_submissions table ---
     db: Session = SessionLocal()
     try:
+        # Normalise dimension labels to the rubric record (single source of
+        # truth, kills label drift) and PASS THROUGH justification + evidence
+        # the pipeline already produced — no extra LLM call. Stored in the
+        # existing JSON column so the detail view (E) has full data too.
+        rubric_dims = (
+            db.query(Dimension).filter(Dimension.rubric_id == rubric_id).all()
+        )
+        dimension_scores_json = [
+            {
+                "dimension": canonical_dimension_label(rubric_dims, ds["dimension"]),
+                "score": ds["score"],
+                "weight": ds["weight"],
+                "weighted_score": ds["weighted_score"],
+                "justification": ds.get("justification", ""),
+                "evidence": ds.get("evidence", []),
+            }
+            for ds in evaluation.get("dimension_scores", [])
+        ]
+
         submission = DemoSubmission(
             display_name=display_name,
             position_id=position_id,
             rubric_id=rubric_id,
             composite_score=evaluation.get("composite_score"),
-            dimension_scores_json=[
-                {
-                    "dimension": ds["dimension"],
-                    "score": ds["score"],
-                    "weight": ds["weight"],
-                    "weighted_score": ds["weighted_score"],
-                }
-                for ds in evaluation.get("dimension_scores", [])
-            ],
+            dimension_scores_json=dimension_scores_json,
             entities_json=result["entities"],
             sections_json=result["sections"],
             profile_summary=evaluation.get("profile_summary", ""),
@@ -294,4 +313,69 @@ async def evaluate_demo(
     finally:
         db.close()
 
+    return {"success": True, "data": data, "error": None}
+
+
+def _demo_dimension_scores_for_detail(rows: list[dict] | None) -> list[dict]:
+    """Reshape stored demo dimension JSON into the candidate-detail shape."""
+    out: list[dict] = []
+    for ds in rows or []:
+        out.append({
+            "id": None,
+            "dimension_name": ds.get("dimension", "Unknown"),
+            "score": ds.get("score", 0),
+            "weight": ds.get("weight", 0),
+            "weighted_score": ds.get("weighted_score", 0),
+            "justification": ds.get("justification", ""),
+            "evidence": ds.get("evidence", []),
+            "is_override": False,
+        })
+    return out
+
+
+@router.get("/submissions/{submission_id}", dependencies=[Depends(_recruiter_or_admin)])
+def get_demo_submission(submission_id: int, db: Session = Depends(get_db)):
+    """Presenter-only detail of one demo submission (reuses candidate-detail UI).
+
+    Auth-gated (recruiter/admin) and behind DEMO_MODE. Sourced entirely from
+    ``demo_submissions`` (never the real candidates table). Returns 404 with a
+    friendly message when the row has already been auto-purged so the frontend
+    can show a graceful empty state instead of crashing.
+    """
+    _require_demo_mode()
+
+    sub = (
+        db.query(DemoSubmission)
+        .filter(DemoSubmission.id == submission_id)
+        .first()
+    )
+    if sub is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Data demo ini sudah dihapus otomatis.",
+        )
+
+    # Resolve the position label from the rubric record (may have been edited
+    # or deleted; fall back gracefully).
+    position_title = None
+    if sub.rubric_id is not None:
+        rubric = db.query(Rubric).filter(Rubric.id == sub.rubric_id).first()
+        if rubric is not None:
+            position_title = strip_demo_prefix(rubric.name)
+
+    data = {
+        "submission_id": sub.id,
+        "anonymous_id": sub.anonymous_id,
+        "display_name": sub.display_name,
+        "status": sub.status,
+        "composite_score": sub.composite_score,
+        "position_title": position_title,
+        "created_at": sub.created_at.isoformat() if sub.created_at else None,
+        "profile_summary": sub.profile_summary,
+        "explanation": sub.explanation,
+        "dimension_scores": _demo_dimension_scores_for_detail(sub.dimension_scores_json),
+        "entities": sub.entities_json or [],
+        "sections": list((sub.sections_json or {}).keys()),
+        "is_demo": True,
+    }
     return {"success": True, "data": data, "error": None}

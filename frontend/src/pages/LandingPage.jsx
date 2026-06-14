@@ -7,6 +7,7 @@ import {
   BarChart3,
   Users,
   FileSearch,
+  Sparkles,
 } from "lucide-react";
 
 const FEATURES = [
@@ -70,10 +71,18 @@ export default function LandingPage() {
           </div>
           <span className="font-semibold text-lg tracking-tight">ScreenAI</span>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
+          <Link
+            to="/demo"
+            className="hidden sm:inline-flex items-center gap-1.5 text-sm text-white/70
+                       hover:text-white transition-colors px-3 py-2"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            Coba Demo
+          </Link>
           <Link
             to="/login"
-            className="text-sm text-white/70 hover:text-white transition-colors px-4 py-2"
+            className="text-sm text-white/70 hover:text-white transition-colors px-3 sm:px-4 py-2"
           >
             Sign in
           </Link>
@@ -126,21 +135,22 @@ export default function LandingPage() {
         {/* CTA buttons */}
         <div className="relative flex flex-col sm:flex-row items-center gap-4">
           <Link
-            to="/register"
+            to="/demo"
             className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500
                        transition-colors text-white px-8 py-3.5 rounded-xl
                        font-semibold text-base shadow-lg shadow-blue-600/30"
           >
-            Mulai Sekarang
-            <ArrowRight className="w-4 h-4" />
+            <Sparkles className="w-4 h-4" />
+            Coba Demo
           </Link>
           <Link
-            to="/login"
+            to="/register"
             className="flex items-center gap-2 border border-white/20 hover:border-white/40
                        hover:bg-white/5 transition-colors text-white/80 hover:text-white
                        px-8 py-3.5 rounded-xl font-medium text-base"
           >
-            Sudah punya akun? Sign in
+            Mulai Sekarang
+            <ArrowRight className="w-4 h-4" />
           </Link>
         </div>
 

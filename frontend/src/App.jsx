@@ -16,6 +16,7 @@ import DashboardPage from "@/pages/DashboardPage";
 import UploadPage from "@/pages/UploadPage";
 import RubricConfigPage from "@/pages/RubricConfigPage";
 import CandidateDetailPage from "@/pages/CandidateDetailPage";
+import DemoSubmissionDetailPage from "@/pages/DemoSubmissionDetailPage";
 import LoginPage from "@/pages/LoginPage";
 import RegisterPage from "@/pages/RegisterPage";
 import VerifyEmailPage from "@/pages/VerifyEmailPage";
@@ -217,6 +218,16 @@ export default function App() {
               <AuthenticatedShell>
                 <ProtectedRoute roles={[ROLES.RECRUITER, ROLES.SUPER_ADMIN]}>
                   <CandidateDetailPage />
+                </ProtectedRoute>
+              </AuthenticatedShell>
+            }
+          />
+          <Route
+            path="/demo-submissions/:id"
+            element={
+              <AuthenticatedShell>
+                <ProtectedRoute roles={[ROLES.RECRUITER, ROLES.SUPER_ADMIN]}>
+                  <DemoSubmissionDetailPage />
                 </ProtectedRoute>
               </AuthenticatedShell>
             }

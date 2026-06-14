@@ -11,6 +11,8 @@ At runtime the router queries the table via ``list_demo_rubrics`` /
 up automatically, without code changes or a restart.
 """
 
+import difflib
+
 from sqlalchemy.orm import Session
 
 from backend.models.rubric import Rubric, Dimension
@@ -236,11 +238,40 @@ def list_demo_rubrics(db: Session) -> list[dict]:
             "label": strip_demo_prefix(r.name),
             "description": r.description,
             "dimension_count": len(r.dimensions),
+            # Read-only criteria preview (B). Names here are the canonical
+            # source of truth that breakdown + justification (C) align to.
+            "dimensions": [
+                {
+                    "name": d.name,
+                    "weight": d.weight,
+                    "description": d.description,
+                }
+                for d in sorted(r.dimensions, key=lambda d: -d.weight)
+            ],
         }
         # Python-side guard so only genuine [DEMO] rubrics are ever exposed.
         for r in rubrics
         if is_demo_rubric_name(r.name)
     ]
+
+
+def canonical_dimension_label(rubric_dimensions, name: str) -> str:
+    """Map a (possibly LLM-paraphrased) dimension name to the rubric's name.
+
+    The pipeline labels each score with the name the LLM returned, which can
+    drift from the rubric (e.g. "Analytical & Project Experience" vs the
+    rubric's "Project & Analytical Experience"). The rubric record is the
+    single source of truth, so demo surfaces normalise back to it: exact
+    (case-insensitive) match first, then a close fuzzy match, else unchanged.
+    """
+    by_lower = {d.name.lower(): d.name for d in rubric_dimensions}
+    key = (name or "").lower()
+    if key in by_lower:
+        return by_lower[key]
+    match = difflib.get_close_matches(key, list(by_lower.keys()), n=1, cutoff=0.6)
+    if match:
+        return by_lower[match[0]]
+    return name
 
 
 def get_demo_rubric(db: Session, rubric_id: int) -> Rubric | None:

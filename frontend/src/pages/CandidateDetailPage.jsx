@@ -14,21 +14,6 @@ import {
   EyeOff,
   Languages,
 } from "lucide-react";
-import {
-  RadarChart,
-  PolarGrid,
-  PolarAngleAxis,
-  PolarRadiusAxis,
-  Radar,
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip as RTooltip,
-  Cell,
-} from "recharts";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -36,15 +21,8 @@ import { Separator } from "@/components/ui/separator";
 import { getCandidate, overrideScore as apiOverrideScore } from "@/lib/api";
 import OverrideDialog from "@/components/OverrideDialog";
 import JustificationCard from "@/components/JustificationCard";
-
-const CHART_COLORS = [
-  "hsl(210, 80%, 55%)",
-  "hsl(150, 70%, 45%)",
-  "hsl(35, 90%, 55%)",
-  "hsl(280, 60%, 55%)",
-  "hsl(0, 70%, 55%)",
-  "hsl(180, 60%, 45%)",
-];
+import DimensionCharts from "@/components/DimensionCharts";
+import { CHART_COLORS } from "@/lib/chartColors";
 
 function getScoreColor(score) {
   if (score >= 75) return "text-green-600";
@@ -175,23 +153,10 @@ export default function CandidateDetailPage() {
   const scores = candidate.dimension_scores || [];
   const hasScores = scores.length > 0;
 
-  const radarData = scores.map((s) => ({
-    dimension: s.dimension_name,
-    score: s.score,
-    fullMark: 100,
-  }));
-
-  const barData = scores.map((s, i) => ({
-    name: s.dimension_name,
-    score: s.score,
-    weight: Math.round(s.weight * 100),
-    fill: CHART_COLORS[i % CHART_COLORS.length],
-  }));
-
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3 sm:gap-4 flex-wrap">
         <Button variant="ghost" size="sm" onClick={() => navigate("/")}>
           <ArrowLeft className="w-4 h-4 mr-2" /> Back
         </Button>
@@ -241,74 +206,7 @@ export default function CandidateDetailPage() {
       )}
 
       {/* Charts */}
-      {hasScores && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* Radar Chart */}
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">Competency Radar</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={280}>
-                <RadarChart data={radarData}>
-                  <PolarGrid stroke="hsl(var(--border))" />
-                  <PolarAngleAxis
-                    dataKey="dimension"
-                    tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
-                  />
-                  <PolarRadiusAxis
-                    angle={90}
-                    domain={[0, 100]}
-                    tick={{ fontSize: 10 }}
-                  />
-                  <Radar
-                    dataKey="score"
-                    stroke="hsl(210, 80%, 55%)"
-                    fill="hsl(210, 80%, 55%)"
-                    fillOpacity={0.2}
-                    strokeWidth={2}
-                  />
-                </RadarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-
-          {/* Bar Chart */}
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">Score Breakdown</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={barData} layout="vertical" margin={{ left: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11 }} />
-                  <YAxis
-                    dataKey="name"
-                    type="category"
-                    width={100}
-                    tick={{ fontSize: 11 }}
-                  />
-                  <RTooltip
-                    contentStyle={{
-                      backgroundColor: "hsl(var(--card))",
-                      border: "1px solid hsl(var(--border))",
-                      borderRadius: "8px",
-                      fontSize: "12px",
-                    }}
-                    formatter={(value, name) => [`${value.toFixed(1)}`, "Score"]}
-                  />
-                  <Bar dataKey="score" radius={[0, 4, 4, 0]} barSize={20}>
-                    {barData.map((entry, idx) => (
-                      <Cell key={idx} fill={entry.fill} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+      {hasScores && <DimensionCharts scores={scores} height={280} />}
 
       {/* Justification cards */}
       {hasScores && (

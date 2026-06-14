@@ -11,6 +11,9 @@ import {
   Briefcase,
   AlertTriangle,
   Brain,
+  ChevronDown,
+  ListChecks,
+  Quote,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -24,6 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import DimensionCharts from "@/components/DimensionCharts";
 import { listDemoPositions, listSampleCvs, evaluateDemo } from "@/lib/demoApi";
 
 // --- Loading stepper definition -------------------------------------------
@@ -204,10 +208,142 @@ function LoadingStepper({ activeStep }) {
   );
 }
 
+// --- B: read-only rubric criteria preview (collapsible) -------------------
+function RubricPreview({ position }) {
+  const [open, setOpen] = useState(false);
+  const dims = position?.dimensions || [];
+  if (dims.length === 0) return null;
+
+  return (
+    <div className="rounded-xl border bg-card">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left"
+      >
+        <span className="flex items-center gap-2 text-sm font-medium">
+          <ListChecks className="w-4 h-4 text-primary" />
+          Lihat kriteria penilaian
+        </span>
+        <ChevronDown
+          className={`w-4 h-4 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+      {open && (
+        <div className="px-4 pb-4 space-y-3">
+          {dims.map((d) => (
+            <div key={d.name} className="rounded-lg border bg-muted/30 p-3">
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <span className="text-sm font-medium">{d.name}</span>
+                <Badge variant="secondary" className="text-[10px] tabular-nums shrink-0">
+                  {Math.round((d.weight ?? 0) * 100)}%
+                </Badge>
+              </div>
+              {d.description && (
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  {d.description}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --- C: per-dimension score + justification + evidence (collapsible) ------
+function DimensionResultCard({ ds, color }) {
+  const [open, setOpen] = useState(false);
+  const score = Number(ds.score ?? 0);
+  const hasDetail = !!ds.justification || (ds.evidence && ds.evidence.length > 0);
+
+  return (
+    <div className="rounded-xl border overflow-hidden bg-card">
+      <button
+        type="button"
+        onClick={() => hasDetail && setOpen((v) => !v)}
+        className={`w-full text-left px-3.5 py-3 ${hasDetail ? "cursor-pointer" : "cursor-default"}`}
+      >
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-sm font-medium truncate">{ds.dimension}</span>
+            {ds.weight != null && (
+              <Badge variant="secondary" className="text-[10px] tabular-nums shrink-0">
+                {Math.round(ds.weight * 100)}%
+              </Badge>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="text-sm font-bold tabular-nums" style={{ color }}>
+              {score.toFixed(0)}
+            </span>
+            <span className="text-xs text-muted-foreground">/100</span>
+            {hasDetail && (
+              <ChevronDown
+                className={`w-4 h-4 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`}
+              />
+            )}
+          </div>
+        </div>
+        <div className="h-2.5 w-full rounded-full bg-muted overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all duration-700 ${barColor(score)}`}
+            style={{ width: `${Math.min(score, 100)}%` }}
+          />
+        </div>
+      </button>
+
+      {open && hasDetail && (
+        <div className="px-3.5 pb-3.5 space-y-3 border-t pt-3">
+          {ds.justification && (
+            <div className="space-y-1">
+              <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                Justifikasi
+              </p>
+              <p className="text-sm text-foreground/80 leading-relaxed whitespace-pre-wrap">
+                {ds.justification}
+              </p>
+            </div>
+          )}
+          {ds.evidence && ds.evidence.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                Bukti dari CV
+              </p>
+              <div className="space-y-1.5">
+                {ds.evidence.map((e, i) => (
+                  <div
+                    key={i}
+                    className="flex items-start gap-2 p-2 rounded-md bg-muted/50 text-sm"
+                  >
+                    <Quote className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                    <span className="text-foreground/70 italic leading-relaxed">{e}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const DIM_COLORS = [
+  "hsl(217, 91%, 60%)",
+  "hsl(199, 89%, 48%)",
+  "hsl(160, 84%, 39%)",
+  "hsl(38, 92%, 50%)",
+  "hsl(271, 81%, 56%)",
+  "hsl(188, 86%, 43%)",
+];
+
 function ResultView({ result, onReset }) {
   const score = Number(result.composite_score ?? 0);
   const animated = useCountUp(score, true);
   const label = scoreLabel(score);
+  const dimScores = result.dimension_scores || [];
 
   // Group entities by label.
   const grouped = {};
@@ -232,26 +368,35 @@ function ResultView({ result, onReset }) {
         </CardContent>
       </Card>
 
-      {/* Breakdown */}
-      {result.dimension_scores && result.dimension_scores.length > 0 && (
+      {/* Mini charts (C, opsional) */}
+      {dimScores.length > 0 && (
+        <DimensionCharts
+          scores={dimScores.map((ds) => ({
+            dimension_name: ds.dimension,
+            score: ds.score,
+            weight: ds.weight,
+          }))}
+          height={210}
+          compact
+        />
+      )}
+
+      {/* Breakdown + justifikasi + evidence per dimensi (C) */}
+      {dimScores.length > 0 && (
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Rincian Penilaian</CardTitle>
+            <CardDescription className="text-xs">
+              Ketuk tiap dimensi untuk melihat justifikasi & bukti dari CV.
+            </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            {result.dimension_scores.map((ds) => (
-              <div key={ds.dimension}>
-                <div className="flex justify-between text-sm mb-1">
-                  <span className="font-medium">{ds.dimension}</span>
-                  <span className="tabular-nums text-muted-foreground">{Number(ds.score).toFixed(0)}/100</span>
-                </div>
-                <div className="h-2.5 w-full rounded-full bg-muted overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all duration-700 ${barColor(ds.score)}`}
-                    style={{ width: `${Math.min(ds.score, 100)}%` }}
-                  />
-                </div>
-              </div>
+          <CardContent className="space-y-2.5">
+            {dimScores.map((ds, i) => (
+              <DimensionResultCard
+                key={ds.dimension || i}
+                ds={ds}
+                color={DIM_COLORS[i % DIM_COLORS.length]}
+              />
             ))}
           </CardContent>
         </Card>
@@ -405,6 +550,8 @@ export default function DemoPage() {
     [positionId, name]
   );
 
+  const selectedPosition = positions.find((p) => String(p.id) === positionId);
+
   const handleAnalyze = () => runEvaluation(file);
 
   const handleReset = () => {
@@ -463,6 +610,11 @@ export default function DemoPage() {
                       ))}
                     </SelectContent>
                   </Select>
+                  {selectedPosition && (
+                    <div className="mt-2">
+                      <RubricPreview position={selectedPosition} />
+                    </div>
+                  )}
                 </div>
 
                 {/* Name */}

@@ -373,3 +373,99 @@ def test_concurrency_limit(demo_enabled, monkeypatch):
     assert all(code == 200 for code in codes)
     assert state["max"] <= settings.demo_max_concurrency
     assert state["max"] >= 2  # parallelism actually occurred (queued, not serial)
+
+
+# --- §7: rubric preview (B) ------------------------------------------------
+
+def test_positions_includes_dimensions(client, demo_enabled):
+    """B: /positions exposes each [DEMO] rubric's dimensions for the preview."""
+    data = client.get("/api/demo/positions").json()["data"]
+    assert len(data) >= 1
+    for pos in data:
+        assert "dimensions" in pos
+        assert len(pos["dimensions"]) == pos["dimension_count"]
+        for d in pos["dimensions"]:
+            assert {"name", "weight", "description"} <= set(d.keys())
+            assert 0 < d["weight"] <= 1
+
+
+# --- §7: justification + evidence passthrough (C) --------------------------
+
+def test_evaluate_passes_through_justification_evidence(client, demo_enabled, mock_pipeline):
+    """C: response carries per-dimension justification + evidence (no LLM call)."""
+    rubric_id = _demo_id(client)
+    resp = client.post(
+        "/api/demo/evaluate",
+        files={"file": ("cv.pdf", PDF_BYTES, "application/pdf")},
+        data={"position_id": str(rubric_id)},
+    )
+    assert resp.status_code == 200
+    dims = resp.json()["data"]["dimension_scores"]
+    assert all("justification" in d and "evidence" in d for d in dims)
+    assert dims[0]["justification"] == "Bukti kuat."
+    assert dims[0]["evidence"] == ["Python", "SQL"]
+    assert "weight" in dims[0]
+
+
+def test_dimension_label_canonicalized(client, demo_enabled, monkeypatch):
+    """Drift fix: an LLM-paraphrased dimension name is normalised to the rubric's."""
+    drifted = _fake_pipeline_result()
+    # First demo rubric (Data Science Intern) has "Project & Analytical Experience".
+    drifted["evaluation"]["dimension_scores"][1]["dimension"] = "Analytical & Project Experience"
+    monkeypatch.setattr(
+        demo_module, "_run_pipeline_sync", lambda path, rubric_id: drifted
+    )
+    rubric_id = _demo_id(client)
+    resp = client.post(
+        "/api/demo/evaluate",
+        files={"file": ("cv.pdf", PDF_BYTES, "application/pdf")},
+        data={"position_id": str(rubric_id)},
+    )
+    assert resp.status_code == 200
+    names = {d["dimension"] for d in resp.json()["data"]["dimension_scores"]}
+    assert "Project & Analytical Experience" in names  # canonical
+    assert "Analytical & Project Experience" not in names  # drift removed
+
+
+# --- §7: demo submission detail (E) ----------------------------------------
+
+@pytest.fixture()
+def auth_as_recruiter():
+    """Bypass the recruiter/admin auth dependency for detail-endpoint tests."""
+    app.dependency_overrides[demo_module._recruiter_or_admin] = lambda: None
+    yield
+    app.dependency_overrides.pop(demo_module._recruiter_or_admin, None)
+
+
+def test_demo_detail_requires_auth(client, demo_enabled):
+    """E stays behind auth even though the rest of the demo router is public."""
+    resp = client.get("/api/demo/submissions/1")
+    assert resp.status_code == 401
+
+
+def test_demo_detail_ok(client, demo_enabled, mock_pipeline, auth_as_recruiter):
+    """E: detail is sourced from demo_submissions with justification + evidence."""
+    rubric_id = _demo_id(client)
+    sub_id = client.post(
+        "/api/demo/evaluate",
+        files={"file": ("cv.pdf", PDF_BYTES, "application/pdf")},
+        data={"position_id": str(rubric_id), "name": "Citra"},
+    ).json()["data"]["submission_id"]
+
+    resp = client.get(f"/api/demo/submissions/{sub_id}")
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["is_demo"] is True
+    assert data["display_name"] == "Citra"
+    assert data["position_title"]  # resolved from rubric record, prefix stripped
+    assert "[DEMO]" not in data["position_title"]
+    ds = data["dimension_scores"]
+    assert ds and "dimension_name" in ds[0]
+    assert "justification" in ds[0] and "evidence" in ds[0]
+
+
+def test_demo_detail_purged_is_graceful(client, demo_enabled, auth_as_recruiter):
+    """E: a purged/missing submission returns 404 with a friendly message."""
+    resp = client.get("/api/demo/submissions/987654")
+    assert resp.status_code == 404
+    assert "dihapus" in resp.json()["detail"].lower()

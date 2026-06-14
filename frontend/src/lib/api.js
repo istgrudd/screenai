@@ -155,6 +155,16 @@ export async function overrideScore(candidateId, dimScoreId, score, reason) {
   });
 }
 
+/**
+ * Get detailed info for a single demo submission (presenter view).
+ * Auth-gated; sourced from demo_submissions. Throws on 404 when the row has
+ * been auto-purged (the thrown message is a friendly Indonesian string).
+ * @param {number} submissionId
+ */
+export async function getDemoSubmission(submissionId) {
+  return request(`/demo/submissions/${submissionId}`);
+}
+
 // ── Rubrics ─────────────────────────────────────────────────────────────────
 
 export async function listRubrics() {

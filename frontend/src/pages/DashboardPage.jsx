@@ -66,7 +66,7 @@ function ScoreBadge({ score }) {
   else if (val >= 25) color = "bg-orange-500/15 text-orange-700 dark:text-orange-400";
 
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold tabular-nums ${color}`}>
+    <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-sm font-semibold tabular-nums ${color}`}>
       {val.toFixed(1)}
     </span>
   );
@@ -155,7 +155,7 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
           <p className="text-muted-foreground mt-1">
@@ -164,7 +164,7 @@ export default function DashboardPage() {
         </div>
         <div className="flex items-center gap-3">
           <Select value={selectedRubric} onValueChange={setSelectedRubric}>
-            <SelectTrigger className="w-56">
+            <SelectTrigger className="w-full sm:w-56">
               <Filter className="w-4 h-4 mr-2 text-muted-foreground" />
               <SelectValue placeholder="Filter by rubric" />
             </SelectTrigger>
@@ -206,7 +206,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Stats cards */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card>
           <CardContent className="py-4 flex items-center gap-4">
             <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
@@ -264,7 +264,7 @@ export default function DashboardPage() {
         </Card>
       ) : (
         <Card>
-          <CardContent className="p-0">
+          <CardContent className="p-0 overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -297,16 +297,17 @@ export default function DashboardPage() {
                 {candidates.map((c) => (
                   <TableRow
                     key={c.anonymous_id}
-                    className={`transition-colors ${
-                      c.is_demo
-                        ? "bg-primary/5"
-                        : "cursor-pointer hover:bg-muted/50"
+                    className={`transition-colors cursor-pointer hover:bg-muted/50 ${
+                      c.is_demo ? "bg-primary/5" : ""
                     }`}
                     onClick={() =>
-                      !c.is_demo && navigate(`/candidates/${c.candidate_id}`)
+                      c.is_demo
+                        ? c.demo_submission_id &&
+                          navigate(`/demo-submissions/${c.demo_submission_id}`)
+                        : navigate(`/candidates/${c.candidate_id}`)
                     }
                   >
-                    <TableCell className="text-center font-medium tabular-nums">
+                    <TableCell className="text-center text-lg font-semibold tabular-nums">
                       {c.rank ?? "—"}
                     </TableCell>
                     <TableCell>

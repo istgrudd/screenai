@@ -170,6 +170,7 @@ def _demo_rows(db: Session, rubric_id: int | None) -> list[dict]:
             "rank": None,
             "candidate_id": None,
             "is_demo": True,
+            "demo_submission_id": sub.id,
             "anonymous_id": sub.anonymous_id,
             "display_name": sub.display_name,
             "status": sub.status,

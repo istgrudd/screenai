@@ -35,14 +35,16 @@ export default function JustificationCard({ dimScore, color, onOverride }) {
               {scoreVal.toFixed(0)}
             </span>
             <span className="text-xs text-muted-foreground">/100</span>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="ml-2"
-              onClick={onOverride}
-            >
-              <Pencil className="w-3.5 h-3.5" />
-            </Button>
+            {onOverride && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="ml-2"
+                onClick={onOverride}
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </Button>
+            )}
           </div>
         </div>
 
