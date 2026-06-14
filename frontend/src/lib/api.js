@@ -1,11 +1,11 @@
 /**
  * API client — fetch wrapper for all backend endpoints.
- * Base URL: http://127.0.0.1:8000/api
+ * Base URL defaults to the same-origin /api reverse-proxy path.
  */
 
 import { getToken, removeToken } from "@/lib/auth";
 
-const BASE_URL = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000/api";
+const BASE_URL = import.meta.env.VITE_API_URL ?? "/api";
 
 /**
  * Generic fetch wrapper that handles JSON responses and errors.

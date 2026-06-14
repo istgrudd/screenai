@@ -5,7 +5,7 @@
  * and never trigger the 401 -> /login redirect (the demo page is public).
  */
 
-const BASE_URL = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000/api";
+const BASE_URL = import.meta.env.VITE_API_URL ?? "/api";
 
 async function unwrap(res) {
   if (!res.ok) {
