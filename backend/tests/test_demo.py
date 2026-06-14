@@ -12,12 +12,48 @@ import time
 
 import httpx
 import pytest
+from fastapi.testclient import TestClient
 
 import backend.routers.demo as demo_module
 from backend.config import settings
 from backend.database import SessionLocal
 from backend.main import app
 from backend.models.demo_submission import DemoSubmission
+from backend.models.rubric import Rubric, Dimension
+
+
+def _create_rubric(name: str, position: str = "Demo Position") -> int:
+    """Insert a rubric (with one full-weight dimension) directly; return its id.
+
+    Used to simulate an admin creating a rubric via the Rubrics page, without
+    going through the auth-protected admin endpoint.
+    """
+    db = SessionLocal()
+    try:
+        rubric = Rubric(name=name, position=position, description=f"{name} desc")
+        db.add(rubric)
+        db.flush()
+        db.add(
+            Dimension(
+                rubric_id=rubric.id,
+                name="Overall",
+                weight=1.0,
+                description="",
+                indicators=[],
+            )
+        )
+        db.commit()
+        db.refresh(rubric)
+        return rubric.id
+    finally:
+        db.close()
+
+
+def _demo_id(client, index: int = 0) -> int:
+    """Resolve a valid demo rubric id live from /positions (never hardcoded)."""
+    resp = client.get("/api/demo/positions")
+    assert resp.status_code == 200
+    return resp.json()["data"][index]["id"]
 
 
 def _fake_pipeline_result():
@@ -88,11 +124,64 @@ def test_positions_disabled_returns_404(client):
 
 
 def test_positions_enabled(client, demo_enabled):
+    """Only [DEMO] rubrics are listed — the two seeded defaults, prefix stripped."""
     resp = client.get("/api/demo/positions")
     assert resp.status_code == 200
     data = resp.json()["data"]
     assert len(data) == 2
+    # Labels carry no [DEMO] prefix.
+    assert {p["label"] for p in data} == {
+        "Data Science Intern",
+        "Backend Engineer Intern",
+    }
+    # Backward-compatible contract for the existing frontend.
     assert {p["title"] for p in data} == {
+        "Data Science Intern",
+        "Backend Engineer Intern",
+    }
+    for p in data:
+        assert isinstance(p["id"], int)
+        assert "[DEMO]" not in p["label"]
+        assert p["dimension_count"] >= 1
+
+
+def test_positions_excludes_non_demo_rubrics(client, demo_enabled):
+    """Non-[DEMO] rubrics must never surface in the demo dropdown."""
+    _create_rubric("Junior Data Analyst Screening", "Junior Data Analyst")
+    _create_rubric("asdasdasd", "whatever")
+
+    data = client.get("/api/demo/positions").json()["data"]
+    labels = {p["label"] for p in data}
+    assert "Junior Data Analyst Screening" not in labels
+    assert "asdasdasd" not in labels
+    assert labels == {"Data Science Intern", "Backend Engineer Intern"}
+
+
+def test_new_demo_rubric_appears_without_restart(client, demo_enabled):
+    """Creating a [DEMO] rubric makes it show up immediately (no restart)."""
+    before = {p["label"] for p in client.get("/api/demo/positions").json()["data"]}
+    assert "QA Engineer Intern" not in before
+
+    _create_rubric("[DEMO] QA Engineer Intern", "QA Engineer")
+
+    after = client.get("/api/demo/positions").json()["data"]
+    labels = {p["label"] for p in after}
+    assert "QA Engineer Intern" in labels
+    assert len(after) == 3  # 2 seeded defaults + the new one
+
+
+def test_bootstrap_recreates_defaults_after_reset(client, demo_enabled):
+    """After wiping all rubrics, /positions re-seeds the two defaults."""
+    db = SessionLocal()
+    try:
+        db.query(Dimension).delete()
+        db.query(Rubric).delete()
+        db.commit()
+    finally:
+        db.close()
+
+    data = client.get("/api/demo/positions").json()["data"]
+    assert {p["label"] for p in data} == {
         "Data Science Intern",
         "Backend Engineer Intern",
     }
@@ -104,7 +193,7 @@ def test_reject_non_pdf(client, demo_enabled, mock_pipeline):
     resp = client.post(
         "/api/demo/evaluate",
         files={"file": ("cv.txt", b"hello", "text/plain")},
-        data={"position_id": "1"},
+        data={"position_id": str(_demo_id(client))},
     )
     assert resp.status_code == 400
     assert "PDF" in resp.json()["detail"]
@@ -115,27 +204,51 @@ def test_reject_oversize(client, demo_enabled, mock_pipeline):
     resp = client.post(
         "/api/demo/evaluate",
         files={"file": ("cv.pdf", big, "application/pdf")},
-        data={"position_id": "1"},
+        data={"position_id": str(_demo_id(client))},
     )
     assert resp.status_code == 413
 
 
-def test_reject_invalid_position(client, demo_enabled, mock_pipeline):
+def test_reject_unknown_rubric(client, demo_enabled, mock_pipeline):
+    """A rubric id that does not exist is rejected."""
     resp = client.post(
         "/api/demo/evaluate",
         files={"file": ("cv.pdf", PDF_BYTES, "application/pdf")},
-        data={"position_id": "99"},
+        data={"position_id": "999999"},
     )
     assert resp.status_code == 400
+
+
+def test_reject_non_demo_rubric(client, demo_enabled, mock_pipeline):
+    """SECURITY: the public endpoint must refuse a non-[DEMO] internal rubric."""
+    internal_id = _create_rubric("Junior Data Analyst Screening", "Junior Data Analyst")
+    resp = client.post(
+        "/api/demo/evaluate",
+        files={"file": ("cv.pdf", PDF_BYTES, "application/pdf")},
+        data={"position_id": str(internal_id)},
+    )
+    assert resp.status_code == 400
+    # And nothing was scored/persisted for it.
+    db = SessionLocal()
+    try:
+        leaked = (
+            db.query(DemoSubmission)
+            .filter(DemoSubmission.rubric_id == internal_id)
+            .count()
+        )
+    finally:
+        db.close()
+    assert leaked == 0
 
 
 # --- Happy path: schema + persistence + ranking ----------------------------
 
 def test_evaluate_success_schema(client, demo_enabled, mock_pipeline):
+    rubric_id = _demo_id(client)
     resp = client.post(
         "/api/demo/evaluate",
         files={"file": ("cv.pdf", PDF_BYTES, "application/pdf")},
-        data={"position_id": "1", "name": "Andi"},
+        data={"position_id": str(rubric_id), "name": "Andi"},
     )
     assert resp.status_code == 200
     data = resp.json()["data"]
@@ -181,7 +294,7 @@ def test_default_name(client, demo_enabled, mock_pipeline):
     resp = client.post(
         "/api/demo/evaluate",
         files={"file": ("cv.pdf", PDF_BYTES, "application/pdf")},
-        data={"position_id": "2"},
+        data={"position_id": str(_demo_id(client))},
     )
     assert resp.status_code == 200
     assert resp.json()["data"]["display_name"] == "Pengunjung Pameran"
@@ -194,7 +307,7 @@ def test_purge_removes_old_rows(client, demo_enabled, mock_pipeline):
     client.post(
         "/api/demo/evaluate",
         files={"file": ("cv.pdf", PDF_BYTES, "application/pdf")},
-        data={"position_id": "1"},
+        data={"position_id": str(_demo_id(client))},
     )
     db = SessionLocal()
     try:
@@ -239,6 +352,9 @@ def test_concurrency_limit(demo_enabled, monkeypatch):
 
     monkeypatch.setattr(demo_module, "_run_pipeline_sync", slow_pipeline)
 
+    # Resolve a valid demo rubric id once, synchronously, before firing.
+    rubric_id = _demo_id(TestClient(app))
+
     async def run():
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -246,7 +362,7 @@ def test_concurrency_limit(demo_enabled, monkeypatch):
                 return await ac.post(
                     "/api/demo/evaluate",
                     files={"file": ("cv.pdf", PDF_BYTES, "application/pdf")},
-                    data={"position_id": "1"},
+                    data={"position_id": str(rubric_id)},
                 )
 
             responses = await asyncio.gather(*[fire() for _ in range(5)])

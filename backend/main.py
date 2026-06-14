@@ -42,9 +42,17 @@ async def lifespan(app: FastAPI):
     print("[OK] Data directories ready")
     print(f"[OK] Server running on port {settings.app_port}")
 
-    # --- Demo Mode: start the auto-purge background task ---
+    # --- Demo Mode: bootstrap default rubrics + start the auto-purge task ---
     purge_task: asyncio.Task | None = None
     if settings.demo_mode:
+        from backend.database import SessionLocal
+        from backend.services.demo_positions import ensure_demo_rubrics
+
+        db = SessionLocal()
+        try:
+            ensure_demo_rubrics(db)  # guarantee the 2 defaults exist (reset-safe)
+        finally:
+            db.close()
         purge_task = asyncio.create_task(demo_purge_loop())
         print("[OK] Demo mode ENABLED — /api/demo/* active, auto-purge running")
 

@@ -1,9 +1,14 @@
-"""Hardcoded demo positions + their scoring rubrics (exhibition Demo Mode).
+"""Demo Mode rubric seed + helpers (exhibition Demo Mode).
 
-The demo page exposes two fixed positions. Each maps to a real Rubric
-(with Dimensions) so the demo evaluation reuses the exact same RAG
-pipeline as the production flow. ``ensure_demo_rubrics`` is idempotent:
-it creates the rubrics on first use and is safe to call repeatedly.
+The **single source of truth** for what the demo page shows and scores is the
+``rubrics`` table: any rubric whose name starts with the ``[DEMO]`` prefix is a
+demo-visible position. ``DEMO_POSITIONS`` below is NOT a runtime data source —
+it is only seed data for ``ensure_demo_rubrics``, which bootstraps two default
+``[DEMO]`` rubrics so the demo is never empty (idempotent + reset-safe).
+
+At runtime the router queries the table via ``list_demo_rubrics`` /
+``get_demo_rubric`` so rubrics created/edited from the admin Rubrics page show
+up automatically, without code changes or a restart.
 """
 
 from sqlalchemy.orm import Session
@@ -11,11 +16,15 @@ from sqlalchemy.orm import Session
 from backend.models.rubric import Rubric, Dimension
 
 
-# Demo positions are addressed by a stable ``position_id`` from the frontend
-# dropdown. ``rubric_name`` is the lookup/creation key in the rubrics table.
+# Rubrics whose name begins with this prefix are "demo-visible" positions.
+DEMO_PREFIX = "[DEMO] "
+_DEMO_PREFIX_BARE = "[DEMO]"
+
+
+# Seed data for the two default demo rubrics created by ``ensure_demo_rubrics``.
+# ``rubric_name`` is the lookup/creation key in the rubrics table.
 DEMO_POSITIONS: list[dict] = [
     {
-        "id": 1,
         "title": "Data Science Intern",
         "rubric_name": "[DEMO] Data Science Intern",
         "description": (
@@ -84,7 +93,6 @@ DEMO_POSITIONS: list[dict] = [
         ],
     },
     {
-        "id": 2,
         "title": "Backend Engineer Intern",
         "rubric_name": "[DEMO] Backend Engineer Intern",
         "description": (
@@ -154,29 +162,28 @@ DEMO_POSITIONS: list[dict] = [
     },
 ]
 
-_POSITION_BY_ID = {p["id"]: p for p in DEMO_POSITIONS}
+def is_demo_rubric_name(name: str | None) -> bool:
+    """True if a rubric name marks it as a demo-visible position."""
+    return bool(name) and name.startswith(_DEMO_PREFIX_BARE)
 
 
-def get_demo_position(position_id: int) -> dict | None:
-    """Return the demo position config for an id, or None if unknown."""
-    return _POSITION_BY_ID.get(position_id)
+def strip_demo_prefix(name: str) -> str:
+    """Return the display label for a demo rubric (name without ``[DEMO]``)."""
+    if name.startswith(DEMO_PREFIX):
+        return name[len(DEMO_PREFIX):].strip()
+    if name.startswith(_DEMO_PREFIX_BARE):
+        return name[len(_DEMO_PREFIX_BARE):].strip()
+    return name
 
 
-def list_demo_positions() -> list[dict]:
-    """Return the public position list for the frontend dropdown."""
-    return [
-        {"id": p["id"], "title": p["title"], "description": p["description"]}
-        for p in DEMO_POSITIONS
-    ]
-
-
-def ensure_demo_rubrics(db: Session) -> dict[int, int]:
-    """Create the demo rubrics if missing; return {position_id: rubric_id}.
+def ensure_demo_rubrics(db: Session) -> list[int]:
+    """Bootstrap the two default demo rubrics if missing; return their ids.
 
     Idempotent — looks up each rubric by its unique ``rubric_name`` and only
-    creates it (plus dimensions) when absent. Safe to call on every request.
+    creates it (plus dimensions) when absent. Safe to call on every request
+    and after a DB reset; it never duplicates or overwrites admin edits.
     """
-    mapping: dict[int, int] = {}
+    ensured: list[int] = []
     for pos in DEMO_POSITIONS:
         rubric = (
             db.query(Rubric)
@@ -202,15 +209,48 @@ def ensure_demo_rubrics(db: Session) -> dict[int, int]:
                     )
                 )
             db.flush()
-        mapping[pos["id"]] = rubric.id
+        ensured.append(rubric.id)
 
     db.commit()
-    return mapping
+    return ensured
 
 
-def resolve_rubric_id(db: Session, position_id: int) -> int | None:
-    """Resolve a demo position_id to its rubric id, creating rubrics if needed."""
-    if position_id not in _POSITION_BY_ID:
+def list_demo_rubrics(db: Session) -> list[dict]:
+    """Return demo-visible rubrics (``[DEMO]`` prefix) for the public dropdown.
+
+    The rubrics table is the single source of truth: every ``[DEMO]`` rubric —
+    the seeded defaults and any created via the admin Rubrics page — appears
+    here. ``id`` is the rubric id (resolved live, never hardcoded), ``title``/
+    ``label`` is the name without the prefix.
+    """
+    rubrics = (
+        db.query(Rubric)
+        .filter(Rubric.name.like("[DEMO]%"))
+        .order_by(Rubric.created_at.asc(), Rubric.id.asc())
+        .all()
+    )
+    return [
+        {
+            "id": r.id,
+            "title": strip_demo_prefix(r.name),
+            "label": strip_demo_prefix(r.name),
+            "description": r.description,
+            "dimension_count": len(r.dimensions),
+        }
+        # Python-side guard so only genuine [DEMO] rubrics are ever exposed.
+        for r in rubrics
+        if is_demo_rubric_name(r.name)
+    ]
+
+
+def get_demo_rubric(db: Session, rubric_id: int) -> Rubric | None:
+    """Return the rubric for ``rubric_id`` only if it is a [DEMO] rubric.
+
+    Returns None when the rubric does not exist or is NOT demo-visible. This
+    is the security gate for the public ``/evaluate`` endpoint: it must never
+    let a public request score against an arbitrary internal rubric.
+    """
+    rubric = db.query(Rubric).filter(Rubric.id == rubric_id).first()
+    if rubric is None or not is_demo_rubric_name(rubric.name):
         return None
-    mapping = ensure_demo_rubrics(db)
-    return mapping.get(position_id)
+    return rubric

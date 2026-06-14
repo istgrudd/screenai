@@ -458,7 +458,7 @@ export default function DemoPage() {
                     <SelectContent>
                       {positions.map((p) => (
                         <SelectItem key={p.id} value={String(p.id)}>
-                          {p.title}
+                          {p.label ?? p.title}
                         </SelectItem>
                       ))}
                     </SelectContent>

@@ -29,9 +29,10 @@ from backend.database import SessionLocal
 from backend.models.demo_submission import DemoSubmission
 from backend.services.anonymizer import anonymize_text
 from backend.services.demo_positions import (
-    get_demo_position,
-    list_demo_positions,
-    resolve_rubric_id,
+    ensure_demo_rubrics,
+    get_demo_rubric,
+    list_demo_rubrics,
+    strip_demo_prefix,
 )
 from backend.services.extractor import extract_text_from_pdf
 from backend.services.normalizer import normalize_and_segment
@@ -99,9 +100,20 @@ def _split_sentences(text: str, limit: int = 4) -> str:
 
 @router.get("/positions")
 def get_positions():
-    """List the hardcoded demo positions for the frontend dropdown."""
+    """List demo-visible rubrics ([DEMO] prefix) for the frontend dropdown.
+
+    Sourced live from the rubrics table — any [DEMO] rubric created/edited via
+    the admin Rubrics page shows up here without a restart. ``ensure_demo_rubrics``
+    bootstraps the two defaults first so the list is never empty (reset-safe).
+    """
     _require_demo_mode()
-    return {"success": True, "data": list_demo_positions(), "error": None}
+    db: Session = SessionLocal()
+    try:
+        ensure_demo_rubrics(db)
+        data = list_demo_rubrics(db)
+    finally:
+        db.close()
+    return {"success": True, "data": data, "error": None}
 
 
 @router.get("/sample-cvs")
@@ -180,10 +192,20 @@ async def evaluate_demo(
     """
     _require_demo_mode()
 
-    # --- Validate position ---
-    position = get_demo_position(position_id)
-    if position is None:
-        raise HTTPException(status_code=400, detail="Posisi tidak valid.")
+    # --- Validate the target rubric (SECURITY GATE) ---
+    # ``position_id`` carries a rubric id resolved live from /positions. The
+    # public endpoint must only ever score against a demo-visible ([DEMO])
+    # rubric — never an arbitrary internal rubric.
+    setup_db: Session = SessionLocal()
+    try:
+        ensure_demo_rubrics(setup_db)  # bootstrap defaults (reset-safe)
+        rubric = get_demo_rubric(setup_db, position_id)
+        if rubric is None:
+            raise HTTPException(status_code=400, detail="Posisi tidak valid.")
+        rubric_id = rubric.id
+        position_title = strip_demo_prefix(rubric.name)
+    finally:
+        setup_db.close()
 
     # --- Validate file type ---
     filename = file.filename or ""
@@ -203,15 +225,6 @@ async def evaluate_demo(
         )
 
     display_name = (name or "").strip() or "Pengunjung Pameran"
-
-    # --- Resolve rubric (creates demo rubrics on first use) ---
-    setup_db: Session = SessionLocal()
-    try:
-        rubric_id = resolve_rubric_id(setup_db, position_id)
-    finally:
-        setup_db.close()
-    if rubric_id is None:
-        raise HTTPException(status_code=500, detail="Rubrik demo tidak tersedia.")
 
     # --- Write to a temp file (never persisted) ---
     tmp_path = None
@@ -271,7 +284,7 @@ async def evaluate_demo(
             "anonymous_id": submission.anonymous_id,
             "display_name": submission.display_name,
             "position_id": position_id,
-            "position_title": position["title"],
+            "position_title": position_title,
             "composite_score": submission.composite_score,
             "dimension_scores": submission.dimension_scores_json,
             "entities": submission.entities_json,

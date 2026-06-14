@@ -23,8 +23,10 @@ import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from backend.config import settings  # noqa: E402
-from backend.database import init_db  # noqa: E402
+from backend.database import init_db, SessionLocal  # noqa: E402
 import backend.models  # noqa: E402,F401 — register models with Base
+from backend.models.rubric import Rubric, Dimension  # noqa: E402
+from backend.models.demo_submission import DemoSubmission  # noqa: E402
 from backend.main import app  # noqa: E402
 
 
@@ -32,6 +34,25 @@ from backend.main import app  # noqa: E402
 def _setup_db():
     """Create all tables once for the test session."""
     init_db()
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _clean_tables():
+    """Start every test from a clean rubric/demo state.
+
+    The demo source of truth is the rubrics table, so tests must not leak
+    rubrics into each other. ``/positions`` / ``ensure_demo_rubrics`` re-seed
+    the two defaults on demand, keeping each test reset-safe.
+    """
+    db = SessionLocal()
+    try:
+        db.query(DemoSubmission).delete()
+        db.query(Dimension).delete()
+        db.query(Rubric).delete()
+        db.commit()
+    finally:
+        db.close()
     yield
 
 
