@@ -8,6 +8,14 @@ import {
   Users,
   FileSearch,
   Sparkles,
+  Target,
+  GraduationCap,
+  Building2,
+  FlaskConical,
+  Calendar,
+  Linkedin,
+  Github,
+  Mail,
 } from "lucide-react";
 
 const FEATURES = [
@@ -58,6 +66,79 @@ const STEPS = [
   },
 ];
 
+// Narasi capstone — di-draft dari konteks halaman. Sesuaikan jika perlu.
+const ABOUT_PROJECT = [
+  {
+    icon: Lightbulb,
+    title: "Latar Belakang",
+    description:
+      "Proses CV screening manual rentan terhadap bias — nama, gender, dan asal institusi kerap mempengaruhi penilaian. Di sisi lain, rekruter kewalahan menyaring ratusan pelamar secara konsisten dan objektif, sehingga kandidat potensial bisa terlewat.",
+  },
+  {
+    icon: Target,
+    title: "Tujuan & Manfaat",
+    description:
+      "ScreenAI mengotomatiskan tahap awal seleksi melalui anonimisasi identitas, evaluasi berbasis rubrik dengan RAG, dan justifikasi yang transparan. Hasilnya: proses seleksi yang lebih adil, cepat, dan akuntabel bagi rekruter maupun kandidat.",
+  },
+];
+
+// Info akademik capstone.
+// TODO: ganti nama dosen pembimbing dengan data asli.
+const ACADEMIC_INFO = [
+  { icon: GraduationCap, label: "Dosen Pembimbing", value: "Nama Dosen Pembimbing, S.T., M.T." },
+  { icon: FlaskConical, label: "Laboratorium", value: "MBC Laboratory" },
+  { icon: Building2, label: "Institusi", value: "Telkom University" },
+  { icon: Calendar, label: "Tahun", value: "2026" },
+];
+
+// Tim pengembang.
+// TODO: lengkapi/ganti dengan data anggota tim yang sebenarnya.
+//  - photo: taruh file di /public/team/ lalu isi path-nya (mis. "/team/rudi.jpg").
+//    Biarkan null untuk memakai avatar inisial otomatis.
+//  - linkedin/github/email: isi yang tersedia, kosongkan ("") yang tidak ada.
+const TEAM = [
+  {
+    name: "Rudi Firdaus",
+    role: "Project Lead / ML Engineer",
+    nim: "TODO-NIM",
+    prodi: "S1 Informatika",
+    photo: null,
+    linkedin: "",
+    github: "",
+    email: "digitalrudi14@gmail.com",
+  },
+  {
+    name: "Nama Anggota 2",
+    role: "Backend Engineer",
+    nim: "TODO-NIM",
+    prodi: "S1 Informatika",
+    photo: null,
+    linkedin: "",
+    github: "",
+    email: "",
+  },
+  {
+    name: "Nama Anggota 3",
+    role: "Frontend Engineer",
+    nim: "TODO-NIM",
+    prodi: "S1 Informatika",
+    photo: null,
+    linkedin: "",
+    github: "",
+    email: "",
+  },
+];
+
+// Inisial dari nama untuk avatar fallback (mis. "Rudi Firdaus" -> "RF").
+function getInitials(name) {
+  return name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((word) => word[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
 export default function LandingPage() {
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-white font-sans">
@@ -72,6 +153,13 @@ export default function LandingPage() {
           <span className="font-semibold text-lg tracking-tight">ScreenAI</span>
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
+          <a
+            href="#about"
+            className="hidden sm:inline-flex items-center text-sm text-white/70
+                       hover:text-white transition-colors px-3 py-2"
+          >
+            Tentang
+          </a>
           <Link
             to="/demo"
             className="hidden sm:inline-flex items-center gap-1.5 text-sm text-white/70
@@ -269,6 +357,152 @@ export default function LandingPage() {
             Daftar Gratis
             <ArrowRight className="w-5 h-5" />
           </Link>
+        </div>
+      </section>
+
+      {/* ── About ── */}
+      <section id="about" className="py-24 px-6 border-t border-white/10 scroll-mt-20">
+        <div className="max-w-6xl mx-auto">
+
+          {/* Section header */}
+          <div className="text-center mb-16">
+            <p className="text-blue-400 text-sm font-medium uppercase tracking-widest mb-3">
+              Tentang
+            </p>
+            <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-4">
+              About Project
+            </h2>
+            <p className="text-white/50 text-lg max-w-xl mx-auto">
+              Mengenal lebih dekat capstone project ScreenAI dan tim di baliknya.
+            </p>
+          </div>
+
+          {/* Project narrative */}
+          <div className="grid md:grid-cols-2 gap-6 mb-10">
+            {ABOUT_PROJECT.map((item) => (
+              <div
+                key={item.title}
+                className="p-8 rounded-2xl border border-white/10 bg-white/[0.03]"
+              >
+                <div className="w-12 h-12 rounded-xl bg-blue-600/20 border border-blue-500/20
+                                flex items-center justify-center mb-6">
+                  <item.icon className="w-6 h-6 text-blue-400" />
+                </div>
+                <h3 className="text-xl font-semibold mb-3">{item.title}</h3>
+                <p className="text-white/50 text-sm leading-relaxed">
+                  {item.description}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          {/* Academic info */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-20
+                          p-6 rounded-2xl border border-white/10 bg-white/[0.03]">
+            {ACADEMIC_INFO.map((info) => (
+              <div key={info.label} className="flex flex-col items-center text-center gap-2">
+                <div className="w-10 h-10 rounded-lg bg-blue-600/20 border border-blue-500/20
+                                flex items-center justify-center">
+                  <info.icon className="w-5 h-5 text-blue-400" />
+                </div>
+                <span className="text-white/40 text-xs uppercase tracking-wider">
+                  {info.label}
+                </span>
+                <span className="text-white/80 text-sm font-medium">{info.value}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Team */}
+          <div className="text-center mb-12">
+            <p className="text-blue-400 text-sm font-medium uppercase tracking-widest mb-3">
+              Tim Pengembang
+            </p>
+            <h3 className="text-3xl md:text-4xl font-bold tracking-tight">
+              Orang di Balik ScreenAI
+            </h3>
+          </div>
+
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {TEAM.map((member) => (
+              <div
+                key={member.name}
+                className="group flex flex-col items-center text-center p-8 rounded-2xl
+                           border border-white/10 bg-white/[0.03]
+                           hover:bg-white/[0.06] hover:border-blue-500/30
+                           transition-all duration-300"
+              >
+                {/* Avatar */}
+                {member.photo ? (
+                  <img
+                    src={member.photo}
+                    alt={member.name}
+                    className="w-20 h-20 rounded-full object-cover mb-5
+                               border-2 border-blue-500/30"
+                  />
+                ) : (
+                  <div className="w-20 h-20 rounded-full mb-5 flex items-center justify-center
+                                  text-xl font-bold text-white
+                                  bg-gradient-to-br from-blue-500 to-cyan-500
+                                  border-2 border-blue-500/30">
+                    {getInitials(member.name)}
+                  </div>
+                )}
+
+                <h4 className="text-lg font-semibold">{member.name}</h4>
+                <span className="mt-1 inline-flex items-center px-3 py-1 rounded-full
+                                 bg-blue-500/10 border border-blue-500/30
+                                 text-blue-400 text-xs font-medium">
+                  {member.role}
+                </span>
+                <p className="mt-3 text-white/50 text-sm">{member.nim}</p>
+                <p className="text-white/40 text-xs">{member.prodi}</p>
+
+                {/* Social links */}
+                {(member.linkedin || member.github || member.email) && (
+                  <div className="flex items-center gap-3 mt-5">
+                    {member.linkedin && (
+                      <a
+                        href={member.linkedin}
+                        target="_blank"
+                        rel="noreferrer"
+                        aria-label={`LinkedIn ${member.name}`}
+                        className="w-9 h-9 rounded-lg border border-white/10 bg-white/[0.03]
+                                   flex items-center justify-center text-white/50
+                                   hover:text-blue-400 hover:border-blue-500/30 transition-colors"
+                      >
+                        <Linkedin className="w-4 h-4" />
+                      </a>
+                    )}
+                    {member.github && (
+                      <a
+                        href={member.github}
+                        target="_blank"
+                        rel="noreferrer"
+                        aria-label={`GitHub ${member.name}`}
+                        className="w-9 h-9 rounded-lg border border-white/10 bg-white/[0.03]
+                                   flex items-center justify-center text-white/50
+                                   hover:text-blue-400 hover:border-blue-500/30 transition-colors"
+                      >
+                        <Github className="w-4 h-4" />
+                      </a>
+                    )}
+                    {member.email && (
+                      <a
+                        href={`mailto:${member.email}`}
+                        aria-label={`Email ${member.name}`}
+                        className="w-9 h-9 rounded-lg border border-white/10 bg-white/[0.03]
+                                   flex items-center justify-center text-white/50
+                                   hover:text-blue-400 hover:border-blue-500/30 transition-colors"
+                      >
+                        <Mail className="w-4 h-4" />
+                      </a>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
